@@ -47,6 +47,7 @@ jobs:
           revision-execution-timeout: 30
           revision-env: |
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+            YANDEX_API_KEY_ID=${{ secrets.YANDEX_API_KEY_ID }}
             YANDEX_API_KEY_SECRET=${{ secrets.YANDEX_API_KEY_SECRET }}
             YANDEX_FOLDER_ID=${{ secrets.YANDEX_FOLDER_ID }}
             YANDEX_SERVICE_ACCOUNT_ID=${{ secrets.YANDEX_SERVICE_ACCOUNT_ID }}
@@ -54,7 +55,7 @@ jobs:
             YDB_DATABASE=${{ secrets.YDB_DATABASE }}
             RESPONSES_BASE_URL=${{ secrets.RESPONSES_BASE_URL }}
             YC_AGENT_ID=${{ secrets.YC_AGENT_ID }}
-            DEBUG=${{ secrets.DEBUG || 'false' }}
-            YC_SA_KEY_JSON=${{ secrets.YC_SA_KEY }}
+            DEBUG=${{ secrets.DEBUG }}
+            YC_SA_KEY_JSON=${{ secrets.YC_SA_KEY_JSON }}
 
 
