@@ -1,0 +1,67 @@
+# Environment variables
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Keys and secrets
+key.json
+*.key
+*.pem
+
+# Editor and dialogue patterns
+editor/
+dialogue_patterns.json
+
+# Additional ignores
+# Logs and debug artifacts
+debug_logs/
+
+# Extra env copies
+— копия.env
+ — копия.env
+
+# Deployment sample (do not commit)
+Образец для деплоя/
+
+# Docker artifacts
+.dockerignore
+*.tar
+
+# Keys and secrets in JSON
+*key*.json
+*keys*.json
+secrets*.json
+
+# Dialogue patterns variants and backups
+DialogPatterns*
+*DialogPatterns*
+dialogue_patterns.json.bak
+*.bak
+
+# Prompt files
+FilePrompt*
+Промпт.txt
+
