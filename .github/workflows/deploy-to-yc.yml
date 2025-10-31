@@ -40,9 +40,9 @@ jobs:
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
           container-name: 'ai-agent-ket'
-          folder-id: ${{ secrets.YC_FOLDER_ID }}
+          folder-id: ${{ secrets.YANDEX_FOLDER_ID }}
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/ai-agent-ket:${{ github.sha }}
-          revision-service-account-id: ${{ secrets.YC_SA_ID }}
+          revision-service-account-id: ${{ secrets.YANDEX_SERVICE_ACCOUNT_ID }}
           revision-memory: '512MB'
           revision-execution-timeout: 30
           revision-env: |

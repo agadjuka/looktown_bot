@@ -20,13 +20,14 @@ class YDBClient:
         service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE")
         
         if iam_token:
-            # Используем IAM токе
+            # Используем IAM токен
             credentials = ydb.AccessTokenCredentials(iam_token)
         elif service_account_key_file:
             # Используем service account key файл
             credentials = ydb.iam.ServiceAccountCredentials.from_file(service_account_key_file)
         else:
-            raise ValueError("Не задан ни YC_IAM_TOKEN, ни YC_SERVICE_ACCOUNT_KEY_FILE в переменных окружения")
+            # Пытаемся получить креды из метаданных окружения (Serverless Containers)
+            credentials = ydb.iam.MetadataUrlCredentials()
         
         # Инициализация драйвера YDB
         self.driver = ydb.Driver(
