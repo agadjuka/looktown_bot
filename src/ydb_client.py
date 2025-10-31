@@ -20,7 +20,7 @@ class YDBClient:
         service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE")
         
         if iam_token:
-            # Используем IAM токен
+            # Используем IAM токе
             credentials = ydb.AccessTokenCredentials(iam_token)
         elif service_account_key_file:
             # Используем service account key файл
