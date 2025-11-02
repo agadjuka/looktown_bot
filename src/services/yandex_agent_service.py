@@ -57,19 +57,27 @@ class YandexAgentService:
     def _make_api_request(self, payload: dict) -> dict:
         """Выполнение запроса к Responses API"""
         # Пытаемся использовать IAM токен (для инструментов)
-        try:
-            if self.auth_service.is_service_account_configured():
+        # Если сервисный аккаунт не настроен, сразу используем API ключ
+        if self.auth_service.is_service_account_configured():
+            try:
                 iam_token = self.auth_service.get_iam_token()
                 headers = {
                     "Authorization": f"Bearer {iam_token}",
                     "Content-Type": "application/json"
                 }
                 logger.debug("Используем Bearer токен (IAM)")
-            else:
-                raise ValueError("Сервисный аккаунт не настроен")
-        except Exception as e:
-            logger.debug("Fallback к API ключу", str(e))
-            # Fallback к API ключу
+            except Exception as e:
+                logger.debug("Fallback к API ключу", str(e))
+                # Fallback к API ключу при ошибке получения IAM токена
+                headers = {
+                    "Authorization": f"Api-Key {self.auth_service.get_api_key()}",
+                    "x-folder-id": os.getenv("YANDEX_FOLDER_ID"),
+                    "Content-Type": "application/json"
+                }
+        else:
+            # Используем API ключ, если сервисный аккаунт не настроен
+            # В Yandex Cloud Serverless Containers это нормальная ситуация
+            logger.debug("Используем API ключ (сервисный аккаунт не настроен)")
             headers = {
                 "Authorization": f"Api-Key {self.auth_service.get_api_key()}",
                 "x-folder-id": os.getenv("YANDEX_FOLDER_ID"),
