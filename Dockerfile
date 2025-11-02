@@ -21,13 +21,9 @@ COPY main.py ./
 COPY service_factory.py ./
 COPY src ./src
 
-# Стартовый скрипт, который создаст key.json из секрета только в рантайме
-COPY entrypoint.sh ./entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
-
-# Порт не обязателен для Telegram-поллинга, но оставим для совместимости
-EXPOSE 8080
-
-CMD ["/app/entrypoint.sh"]
+# Запуск через uvicorn напрямую (как в рабочем проекте)
+# Порт 8080 захардкожен (Yandex Cloud автоматически определит)
+# key.json создается в startup событии FastAPI при необходимости
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
 
 

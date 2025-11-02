@@ -1,52 +1,52 @@
 import os
 import sys
 
-# Ранние логи ДО любых импортов
-print("=" * 60, file=sys.stderr, flush=True)
-print("🚀 НАЧАЛО ИМПОРТА МОДУЛЕЙ", file=sys.stderr, flush=True)
-print("=" * 60, file=sys.stderr, flush=True)
+# Ранние логи ДО любых импортов (в stdout для Yandex Cloud)
+print("=" * 60, flush=True)
+print("🚀 НАЧАЛО ИМПОРТА МОДУЛЕЙ", flush=True)
+print("=" * 60, flush=True)
 
 try:
     from dotenv import load_dotenv
-    print("✅ dotenv импортирован", file=sys.stderr, flush=True)
+    print("✅ dotenv импортирован", flush=True)
 except Exception as e:
-    print(f"❌ Ошибка импорта dotenv: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Ошибка импорта dotenv: {e}", flush=True)
     sys.exit(1)
 
 load_dotenv()
-print("✅ .env загружен", file=sys.stderr, flush=True)
+print("✅ .env загружен", flush=True)
 
 try:
     from fastapi import FastAPI, Request, BackgroundTasks
-    print("✅ FastAPI импортирован", file=sys.stderr, flush=True)
+    print("✅ FastAPI импортирован", flush=True)
 except Exception as e:
-    print(f"❌ Ошибка импорта FastAPI: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Ошибка импорта FastAPI: {e}", flush=True)
     sys.exit(1)
 
 try:
     from telegram import Update
     from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
     from telegram.constants import ParseMode
-    print("✅ telegram библиотеки импортированы", file=sys.stderr, flush=True)
+    print("✅ telegram библиотеки импортированы", flush=True)
 except Exception as e:
-    print(f"❌ Ошибка импорта telegram: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Ошибка импорта telegram: {e}", flush=True)
     sys.exit(1)
 
 try:
     from service_factory import get_yandex_agent_service
-    print("✅ service_factory импортирован", file=sys.stderr, flush=True)
+    print("✅ service_factory импортирован", flush=True)
 except Exception as e:
-    print(f"❌ Ошибка импорта service_factory: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Ошибка импорта service_factory: {e}", flush=True)
     sys.exit(1)
 
 try:
     from src.services.logger_service import logger
-    print("✅ logger импортирован", file=sys.stderr, flush=True)
+    print("✅ logger импортирован", flush=True)
 except Exception as e:
-    print(f"❌ Ошибка импорта logger: {e}", file=sys.stderr, flush=True)
+    print(f"❌ Ошибка импорта logger: {e}", flush=True)
     sys.exit(1)
 
-print("✅ ВСЕ ИМПОРТЫ УСПЕШНЫ", file=sys.stderr, flush=True)
+print("✅ ВСЕ ИМПОРТЫ УСПЕШНЫ", flush=True)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
@@ -139,24 +139,51 @@ async def process_telegram_update(update: Update):
 @app.on_event("startup")
 async def startup_event():
     """Выполняется при запуске приложения"""
+    # Логируем в stdout для гарантированной видимости
+    print("╔═══════════════════════════════════════════════════════════", flush=True)
+    print("║ 🚀 FastAPI startup: Приложение запускается...", flush=True)
+    print("╚═══════════════════════════════════════════════════════════", flush=True)
+    
     logger.info("╔═══════════════════════════════════════════════════════════")
     logger.info("║ 🚀 Приложение запускается...")
     logger.info("╚═══════════════════════════════════════════════════════════")
     
+    # Создаем key.json из переменной окружения, если нужно (как в entrypoint.sh)
+    yc_sa_key_json = os.getenv('YC_SA_KEY_JSON')
+    if yc_sa_key_json:
+        print("📝 Создание key.json из переменной окружения...", flush=True)
+        try:
+            with open('/app/key.json', 'w') as f:
+                f.write(yc_sa_key_json)
+            os.environ['YANDEX_SERVICE_ACCOUNT_KEY_FILE'] = '/app/key.json'
+            os.environ['YC_SERVICE_ACCOUNT_KEY_FILE'] = '/app/key.json'
+            print("✅ key.json создан", flush=True)
+        except Exception as e:
+            print(f"⚠️ Ошибка создания key.json: {e}", flush=True)
+    
     # Настраиваем приложение Telegram
     try:
+        print("🔧 Настройка приложения Telegram...", flush=True)
         setup_application()
+        print("✅ Приложение Telegram настроено", flush=True)
         
         # Инициализируем и запускаем приложение Telegram (без polling)
+        print("🚀 Инициализация Telegram приложения...", flush=True)
         await application.initialize()
         await application.start()
+        print("✅ Приложение Telegram запущено", flush=True)
         
         logger.success("✅ Приложение Telegram запущено")
     except Exception as e:
-        logger.error(f"❌ Ошибка при запуске приложения Telegram: {e}")
+        error_msg = f"❌ Ошибка при запуске приложения Telegram: {e}"
+        print(error_msg, flush=True)
         import traceback
-        logger.error(f"Трассировка:\n{traceback.format_exc()}")
-        raise
+        tb = traceback.format_exc()
+        print(f"Трассировка:\n{tb}", flush=True)
+        logger.error(error_msg)
+        logger.error(f"Трассировка:\n{tb}")
+        # НЕ делаем raise - пусть приложение запустится даже с ошибкой
+        # raise
     
     # Настраиваем webhook
     if WEBHOOK_URL:
@@ -286,7 +313,7 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', '8080'))  # В контейнере порт фиксированный 8080
     
     logger.info(f"🚀 Запуск FastAPI сервера на {host}:{port}")
-    print(f"🚀 Запуск FastAPI на {host}:{port}", file=sys.stderr, flush=True)
+    print(f"🚀 Запуск FastAPI на {host}:{port}", flush=True)
     
     # Запускаем через uvicorn
     uvicorn.run(
