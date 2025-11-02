@@ -17,6 +17,7 @@ load_dotenv()
 print("✅ .env загружен", flush=True)
 
 try:
+    import asyncio
     from fastapi import FastAPI, Request, BackgroundTasks
     print("✅ FastAPI импортирован", flush=True)
 except Exception as e:
@@ -66,7 +67,8 @@ async def send_to_agent(message_text, chat_id):
     try:
         logger.agent("Обработка сообщения", chat_id)
         yandex_agent_service = get_yandex_agent_service()
-        response = yandex_agent_service.send_to_agent(chat_id, message_text)
+        # Обертываем синхронный блокирующий вызов в thread executor, чтобы не блокировать event loop
+        response = await asyncio.to_thread(yandex_agent_service.send_to_agent, chat_id, message_text)
         logger.agent("Ответ получен", chat_id)
         return response
     except Exception as e:
@@ -85,7 +87,8 @@ async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.telegram("Команда /new", chat_id)
     try:
         yandex_agent_service = get_yandex_agent_service()
-        yandex_agent_service.reset_context(chat_id)
+        # Обертываем синхронный вызов в thread executor, чтобы не блокировать event loop
+        await asyncio.to_thread(yandex_agent_service.reset_context, chat_id)
         logger.success("Контекст сброшен", chat_id)
         await update.message.reply_text('Контекст сброшен. Начинаем новый диалог!')
     except Exception as e:
