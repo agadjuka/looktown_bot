@@ -56,7 +56,7 @@ class Logger:
             return f"{color}{text}{Colors.RESET}"
         return text
     
-    def _log(self, level: str, emoji: str, color: str, message: str, details: Optional[str] = None):
+    def _log(self, level: str, emoji: str, color: str, message: str, details: Optional[str] = None, use_stderr: bool = False):
         """Базовый метод логирования"""
         timestamp = self._format_time()
         level_colored = self._colorize(f"[{level}]", color)
@@ -70,7 +70,9 @@ class Logger:
             details_colored = self._colorize(f"({details})", Colors.DIM)
             main_msg += f" {details_colored}"
         
-        print(main_msg)
+        # Выводим в stderr для ошибок и предупреждений, иначе в stdout
+        output_stream = sys.stderr if use_stderr else sys.stdout
+        print(main_msg, file=output_stream, flush=True)
     
     def info(self, message: str, details: Optional[str] = None):
         """Информационное сообщение"""
@@ -82,11 +84,11 @@ class Logger:
     
     def warning(self, message: str, details: Optional[str] = None):
         """Предупреждение"""
-        self._log("WARNING", "⚠️", Colors.YELLOW, message, details)
+        self._log("WARNING", "⚠️", Colors.YELLOW, message, details, use_stderr=True)
     
     def error(self, message: str, details: Optional[str] = None):
-        """Ошибка"""
-        self._log("ERROR", "❌", Colors.RED, message, details)
+        """Ошибка - выводится в stderr для гарантированной видимости"""
+        self._log("ERROR", "❌", Colors.RED, message, details, use_stderr=True)
     
     def debug(self, message: str, details: Optional[str] = None):
         """Отладочное сообщение (только если включен DEBUG режим)"""

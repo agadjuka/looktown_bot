@@ -31,17 +31,18 @@ jobs:
           context: .
           push: true
           tags: |
-            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/ai-agent-ket:${{ github.sha }}
-            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/ai-agent-ket:latest
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/looktown_bot:${{ github.sha }}
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/looktown_bot:latest
           platforms: linux/amd64
 
       - name: Deploy Serverless Container
+        id: deploy
         uses: yc-actions/yc-sls-container-deploy@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
           container-name: 'ai-agent-ket'
           folder-id: ${{ secrets.YANDEX_FOLDER_ID }}
-          revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/ai-agent-ket:${{ github.sha }}
+          revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/looktown_bot:${{ github.sha }}
           revision-service-account-id: ${{ secrets.YANDEX_SERVICE_ACCOUNT_ID }}
           revision-memory: '512MB'
           revision-execution-timeout: 30
@@ -57,5 +58,77 @@ jobs:
             YC_AGENT_ID=${{ secrets.YC_AGENT_ID }}
             DEBUG=${{ secrets.DEBUG }}
             YC_SA_KEY_JSON=${{ secrets.YC_SA_KEY_JSON }}
+            PORT=8080
+            CONTAINER_NAME=ai-agent-ket
+
+      - name: Setup Yandex Cloud CLI and jq
+        if: always()
+        run: |
+          # Устанавливаем YC CLI
+          curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          export PATH=$PATH:$HOME/yandex-cloud/bin
+          yc version
+          
+          # Устанавливаем jq для парсинга JSON
+          sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Get Container URL and Set Webhook
+        if: always()
+        env:
+          YC_SA_KEY_JSON: ${{ secrets.YC_SA_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+        run: |
+          export PATH=$PATH:$HOME/yandex-cloud/bin
+          
+          # Настраиваем YC CLI с сервисным аккаунтом
+          echo "$YC_SA_KEY_JSON" > /tmp/sa-key.json
+          yc config profile create sa-profile || true
+          yc config set service-account-key /tmp/sa-key.json --profile sa-profile
+          yc config set folder-id $YANDEX_FOLDER_ID --profile sa-profile
+          export YC_PROFILE=sa-profile
+          
+          # Получаем URL контейнера
+          echo "🔍 Получаем URL контейнера..."
+          CONTAINER_URL=$(yc serverless container get --name ai-agent-ket --format json 2>/dev/null | jq -r '.url // empty' || echo "")
+          
+          if [ -z "$CONTAINER_URL" ] || [ "$CONTAINER_URL" == "null" ]; then
+            echo "⚠️ Не удалось получить URL контейнера автоматически"
+            echo "💡 Возможные причины:"
+            echo "   1. Контейнер еще не создан (первый деплой)"
+            echo "   2. Недостаточно прав у сервисного аккаунта"
+            echo ""
+            echo "💡 Вы можете получить URL вручную командой:"
+            echo "   yc serverless container get --name ai-agent-ket"
+            echo "💡 Затем установите webhook вручную:"
+            echo "   curl -X POST \"https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/setWebhook\" \\"
+            echo "     -H \"Content-Type: application/json\" \\"
+            echo "     -d '{\"url\": \"<CONTAINER_URL>/webhook\"}'"
+            exit 0
+          fi
+          
+          echo "✅ URL контейнера: $CONTAINER_URL"
+          
+          # Формируем webhook URL
+          WEBHOOK_URL="${CONTAINER_URL}/webhook"
+          
+          # Устанавливаем webhook через Telegram Bot API
+          echo "📡 Устанавливаем webhook: $WEBHOOK_URL"
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+            -H "Content-Type: application/json" \
+            -d "{\"url\": \"${WEBHOOK_URL}\"}")
+          
+          # Проверяем результат
+          if echo "$RESPONSE" | jq -e '.ok == true' > /dev/null; then
+            echo "✅ Webhook успешно установлен!"
+            echo "$RESPONSE" | jq '.'
+          else
+            echo "❌ Ошибка при установке webhook:"
+            echo "$RESPONSE" | jq '.'
+            exit 1
+          fi
+          
+          # Очищаем временный файл
+          rm -f /tmp/sa-key.json
 
 

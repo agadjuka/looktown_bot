@@ -17,6 +17,7 @@ RUN pip install -r requirements.txt
 
 # Исходники приложения
 COPY bot.py ./
+COPY main.py ./
 COPY service_factory.py ./
 COPY src ./src
 

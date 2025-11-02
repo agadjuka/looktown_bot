@@ -4,3 +4,4 @@ python-dotenv
 PyJWT
 requests
 pytz
+aiohttp
