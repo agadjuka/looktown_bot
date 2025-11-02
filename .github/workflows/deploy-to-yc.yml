@@ -40,7 +40,7 @@ jobs:
         uses: yc-actions/yc-sls-container-deploy@v1
         with:
           yc-sa-json-credentials: ${{ secrets.YC_SA_KEY }}
-          container-name: 'ai-agent-ket'
+          container-name: 'looktown_bot'
           folder-id: ${{ secrets.YANDEX_FOLDER_ID }}
           revision-image-url: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/looktown_bot:${{ github.sha }}
           revision-service-account-id: ${{ secrets.YANDEX_SERVICE_ACCOUNT_ID }}
@@ -58,7 +58,7 @@ jobs:
             YC_AGENT_ID=${{ secrets.YC_AGENT_ID }}
             DEBUG=${{ secrets.DEBUG }}
             YC_SA_KEY_JSON=${{ secrets.YC_SA_KEY_JSON }}
-            CONTAINER_NAME=ai-agent-ket
+            CONTAINER_NAME=looktown_bot
 
       - name: Setup Yandex Cloud CLI and jq
         if: always()
@@ -89,7 +89,7 @@ jobs:
           
           # Получаем URL контейнера
           echo "🔍 Получаем URL контейнера..."
-          CONTAINER_URL=$(yc serverless container get --name ai-agent-ket --format json 2>/dev/null | jq -r '.url // empty' || echo "")
+          CONTAINER_URL=$(yc serverless container get --name looktown_bot --format json 2>/dev/null | jq -r '.url // empty' || echo "")
           
           if [ -z "$CONTAINER_URL" ] || [ "$CONTAINER_URL" == "null" ]; then
             echo "⚠️ Не удалось получить URL контейнера автоматически"
@@ -98,7 +98,7 @@ jobs:
             echo "   2. Недостаточно прав у сервисного аккаунта"
             echo ""
             echo "💡 Вы можете получить URL вручную командой:"
-            echo "   yc serverless container get --name ai-agent-ket"
+            echo "   yc serverless container get --name looktown_bot"
             echo "💡 Затем установите webhook вручную:"
             echo "   curl -X POST \"https://api.telegram.org/bot\${TELEGRAM_BOT_TOKEN}/setWebhook\" \\"
             echo "     -H \"Content-Type: application/json\" \\"

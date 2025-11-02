@@ -21,9 +21,12 @@ COPY main.py ./
 COPY service_factory.py ./
 COPY src ./src
 
-# Запуск через uvicorn напрямую (как в рабочем проекте)
+# Wrapper скрипт для запуска с диагностикой
+COPY start_server.py ./
+RUN chmod +x /app/start_server.py
+
+# Запуск через wrapper скрипт для гарантированного логирования
 # Порт 8080 захардкожен (Yandex Cloud автоматически определит)
-# key.json создается в startup событии FastAPI при необходимости
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "/app/start_server.py"]
 
 

@@ -57,7 +57,7 @@ application = None
 
 # Создаем FastAPI приложение
 app = FastAPI(
-    title="AI Agent Ket Telegram Bot",
+    title="Looktown Bot",
     version="0.1.0"
 )
 
@@ -229,7 +229,7 @@ def root():
     """Корневой эндпоинт для проверки доступности сервиса"""
     return {
         "status": "OK",
-        "message": "AI Agent Ket Telegram Bot is running",
+        "message": "Looktown Bot is running",
         "version": "0.1.0",
         "service": "telegram-bot"
     }
@@ -288,7 +288,7 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
             # Если это не Telegram update, возвращаем обычный ответ
             return {
                 "status": "OK",
-                "message": "AI Agent Ket Telegram Bot is running",
+                "message": "Looktown Bot is running",
                 "version": "0.1.0"
             }
     except Exception as e:
@@ -296,7 +296,7 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
         # В случае ошибки возвращаем обычный ответ
         return {
             "status": "OK",
-            "message": "AI Agent Ket Telegram Bot is running",
+            "message": "Looktown Bot is running",
             "version": "0.1.0"
         }
 
