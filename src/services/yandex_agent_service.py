@@ -5,6 +5,7 @@ import os
 import time
 import random
 import requests
+import asyncio
 from datetime import datetime
 import pytz
 from typing import Optional
@@ -41,26 +42,33 @@ class YandexAgentService:
         moscow_time = datetime.now(moscow_tz)
         return moscow_time.strftime("%d.%m.%Y %H:%M:%S")
     
-    def _retry_with_backoff(self, func, max_retries=3):
-        """Ретраи с экспоненциальным backoff"""
+    async def _retry_with_backoff(self, coro_func, max_retries=3):
+        """Ретраи с экспоненциальным backoff для async функций (не блокирует event loop)"""
         for attempt in range(max_retries):
             try:
-                return func()
+                # Создаем новую корутину при каждой попытке
+                coro = coro_func()
+                return await coro
             except Exception as e:
                 if attempt == max_retries - 1:
                     raise e
                 
-                # Экспоненциальный backoff с джиттером
+                # Экспоненциальный backoff с джиттером (неблокирующий)
                 delay = (2 ** attempt) + random.uniform(0, 1)
-                time.sleep(delay)
+                await asyncio.sleep(delay)
     
-    def _make_api_request(self, payload: dict) -> dict:
-        """Выполнение запроса к Responses API"""
+    async def _make_api_request(self, payload: dict) -> dict:
+        """Выполнение запроса к Responses API (асинхронный, не блокирует event loop)"""
         # Пытаемся использовать IAM токен (для инструментов)
         # Если сервисный аккаунт не настроен, сразу используем API ключ
         if self.auth_service.is_service_account_configured():
             try:
-                iam_token = self.auth_service.get_iam_token()
+                # Получаем IAM токен асинхронно через executor (так как метод синхронный)
+                loop = asyncio.get_event_loop()
+                iam_token = await loop.run_in_executor(
+                    None,
+                    self.auth_service.get_iam_token
+                )
                 headers = {
                     "Authorization": f"Bearer {iam_token}",
                     "Content-Type": "application/json"
@@ -87,11 +95,17 @@ class YandexAgentService:
         # Полный URL с путем /responses
         full_url = f"{self.base_url}/responses"
         
-        response = requests.post(
-            full_url,
-            headers=headers,
-            json=payload,
-            timeout=30
+        # КРИТИЧЕСКИ ВАЖНО: Обертываем синхронный requests.post() в executor,
+        # чтобы не блокировать event loop во время ожидания ответа от нейронки
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,  # Используем default executor (ThreadPoolExecutor)
+            lambda: requests.post(
+                full_url,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
         )
         
         if response.status_code != 200:
@@ -99,13 +113,16 @@ class YandexAgentService:
         
         return response.json()
     
-    def send_to_agent(self, chat_id: str, user_text: str) -> dict:
-        """Отправка сообщения агенту через Responses API с памятью"""
+    async def send_to_agent(self, chat_id: str, user_text: str) -> dict:
+        """Отправка сообщения агенту через Responses API с памятью (асинхронный, не блокирует event loop)"""
         try:
             start_time = time.time()
             
-            # Получаем last_response_id из YDB
-            previous_response_id = self.ydb_client.get_last_response_id(chat_id)
+            # Получаем last_response_id из YDB через executor (не блокирует event loop)
+            previous_response_id = await asyncio.to_thread(
+                self.ydb_client.get_last_response_id,
+                chat_id
+            )
             
             logger.debug("Получен previous_response_id", f"chat_id={chat_id}")
             
@@ -131,17 +148,24 @@ class YandexAgentService:
             if previous_response_id:
                 payload["previous_response_id"] = previous_response_id
             
-            # Сохраняем запрос для дебага
-            self.debug_service.save_request(payload, chat_id)
+            # Сохраняем запрос для дебага через executor (быстрая операция, но для консистентности)
+            await asyncio.to_thread(
+                self.debug_service.save_request,
+                payload,
+                chat_id
+            )
             
-            # Выполняем запрос с ретраями
-            def make_request():
-                return self._make_api_request(payload)
+            # Выполняем запрос с ретраями (асинхронно, не блокирует event loop)
+            result = await self._retry_with_backoff(
+                lambda: self._make_api_request(payload)
+            )
             
-            result = self._retry_with_backoff(make_request)
-            
-            # Сохраняем ответ от LLM для дебага
-            self.debug_service.save_response(result, chat_id)
+            # Сохраняем ответ от LLM для дебага через executor
+            await asyncio.to_thread(
+                self.debug_service.save_response,
+                result,
+                chat_id
+            )
             
             # Извлекаем response_id и текст ответа
             response_id = result.get("id")
@@ -183,9 +207,13 @@ class YandexAgentService:
                 else:
                     raise Exception("Empty response from API")
             
-            # Сохраняем новый response_id в YDB
+            # Сохраняем новый response_id в YDB через executor (не блокирует event loop)
             if response_id:
-                self.ydb_client.save_response_id(chat_id, response_id)
+                await asyncio.to_thread(
+                    self.ydb_client.save_response_id,
+                    chat_id,
+                    response_id
+                )
                 logger.ydb("Сохранен response_id", chat_id)
             
             # Логируем метрики
@@ -204,7 +232,7 @@ class YandexAgentService:
             # Если ошибка связана с цепочкой (слишком длинная/просрочена), очищаем контекст
             if any(keyword in error_msg.lower() for keyword in ["chain", "expired", "too long", "цепочка", "просрочена"]):
                 logger.warning("Очищаем контекст из-за ошибки цепочки", chat_id)
-                self.reset_context(chat_id)
+                await self.reset_context(chat_id)
                 
                 # Повторяем запрос без previous_response_id
                 try:
@@ -224,13 +252,23 @@ class YandexAgentService:
                         "tool_choice": "none"  # Отключаем инструменты при ошибке
                     }
                     
-                    # Сохраняем повторный запрос для дебага
-                    self.debug_service.save_request(payload, f"{chat_id}_retry")
+                    # Сохраняем повторный запрос для дебага через executor
+                    await asyncio.to_thread(
+                        self.debug_service.save_request,
+                        payload,
+                        f"{chat_id}_retry"
+                    )
                     
-                    result = self._retry_with_backoff(lambda: self._make_api_request(payload))
+                    result = await self._retry_with_backoff(
+                        lambda: self._make_api_request(payload)
+                    )
                     
-                    # Сохраняем ответ от LLM для дебага (retry)
-                    self.debug_service.save_response(result, f"{chat_id}_retry")
+                    # Сохраняем ответ от LLM для дебага (retry) через executor
+                    await asyncio.to_thread(
+                        self.debug_service.save_response,
+                        result,
+                        f"{chat_id}_retry"
+                    )
                     
                     response_id = result.get("id")
                     response_text = ""
@@ -250,7 +288,11 @@ class YandexAgentService:
                                         break
                     
                     if response_id:
-                        self.ydb_client.save_response_id(chat_id, response_id)
+                        await asyncio.to_thread(
+                            self.ydb_client.save_response_id,
+                            chat_id,
+                            response_id
+                        )
                         logger.ydb("Сохранен response_id (retry)", chat_id)
                     
                     logger.success("Повторный запрос выполнен успешно", chat_id)
@@ -265,10 +307,13 @@ class YandexAgentService:
             
             return {"user_message": f"Ошибка при работе с Responses API: {error_msg}"}
     
-    def reset_context(self, chat_id: str):
-        """Сброс контекста для чата"""
+    async def reset_context(self, chat_id: str):
+        """Сброс контекста для чата (асинхронный, не блокирует event loop)"""
         try:
-            self.ydb_client.reset_context(chat_id)
+            await asyncio.to_thread(
+                self.ydb_client.reset_context,
+                chat_id
+            )
             logger.ydb("Контекст сброшен", chat_id)
         except Exception as e:
             logger.error("Ошибка при сбросе контекста", str(e))
