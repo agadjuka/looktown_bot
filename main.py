@@ -17,7 +17,7 @@ load_dotenv()
 print("✅ .env загружен", flush=True)
 
 try:
-    from fastapi import FastAPI, Request, BackgroundTasks
+    from fastapi import FastAPI, Request
     print("✅ FastAPI импортирован", flush=True)
 except Exception as e:
     print(f"❌ Ошибка импорта FastAPI: {e}", flush=True)
@@ -237,8 +237,8 @@ def health_check():
     }
 
 @app.post(WEBHOOK_PATH, tags=["Telegram"])
-async def webhook(request: Request, background_tasks: BackgroundTasks):
-    """Обработчик webhook от Telegram"""
+async def webhook(request: Request):
+    """Обработчик webhook от Telegram - ожидает завершения обработки"""
     global application
     
     try:
@@ -249,19 +249,22 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         data = await request.json()
         update = Update.de_json(data, application.bot)
         
-        # Обрабатываем update в фоне
-        background_tasks.add_task(process_telegram_update, update)
+        # ОЖИДАЕМ завершения обработки (как в рабочем проекте)
+        # Event loop не блокируется, т.к. операции внутри асинхронные
+        await process_telegram_update(update)
         
+        # Возвращаем ответ только после полной обработки
         return {"ok": True}
     except Exception as e:
         logger.error("Ошибка при обработке webhook", str(e))
         return {"ok": False, "error": str(e)}
 
 @app.post("/", tags=["Root"])
-async def root_post(request: Request, background_tasks: BackgroundTasks):
+async def root_post(request: Request):
     """
     POST обработчик для корневого пути.
     Может обрабатывать как обычные запросы, так и Telegram webhook.
+    Ожидает завершения обработки для Telegram updates.
     """
     try:
         # Пытаемся обработать как Telegram webhook
@@ -274,7 +277,8 @@ async def root_post(request: Request, background_tasks: BackgroundTasks):
                 return {"status": "OK", "error": "Application not initialized"}
             
             update = Update.de_json(data, application.bot)
-            background_tasks.add_task(process_telegram_update, update)
+            # ОЖИДАЕМ завершения обработки (как в рабочем проекте)
+            await process_telegram_update(update)
             return {"status": "ok"}
         else:
             # Если это не Telegram update, возвращаем обычный ответ
