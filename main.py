@@ -148,29 +148,10 @@ async def startup_event():
     logger.info("║ 🚀 Приложение запускается...")
     logger.info("╚═══════════════════════════════════════════════════════════")
     
-    # Создаем key.json из переменной окружения, если нужно (только если переменная задана и содержит валидный JSON)
-    # В Yandex Cloud Serverless Containers обычно не требуется, так как используются MetadataUrlCredentials
-    yc_sa_key_json = os.getenv('YC_SA_KEY_JSON')
-    if yc_sa_key_json:
-        print("📝 Создание key.json из переменной окружения...", flush=True)
-        try:
-            # Валидируем JSON перед записью
-            import json
-            try:
-                json.loads(yc_sa_key_json)
-            except json.JSONDecodeError as json_err:
-                print(f"❌ Ошибка валидации JSON в YC_SA_KEY_JSON: {json_err}", flush=True)
-                print(f"⚠️ Пропускаем создание key.json из-за некорректного JSON", flush=True)
-                yc_sa_key_json = None
-            
-            if yc_sa_key_json:
-                with open('/app/key.json', 'w', encoding='utf-8') as f:
-                    f.write(yc_sa_key_json)
-                os.environ['YANDEX_SERVICE_ACCOUNT_KEY_FILE'] = '/app/key.json'
-                os.environ['YC_SERVICE_ACCOUNT_KEY_FILE'] = '/app/key.json'
-                print("✅ key.json создан", flush=True)
-        except Exception as e:
-            print(f"⚠️ Ошибка создания key.json: {e}", flush=True)
+    # В Yandex Cloud Serverless Containers сервисный аккаунт используется автоматически
+    # через метаданные (revision-service-account-id), файл key.json не требуется.
+    # Код для создания key.json удален - используем автоматическую аутентификацию.
+    print("✅ Используется автоматическая аутентификация через метаданные Yandex Cloud", flush=True)
     
     # Настраиваем приложение Telegram
     try:
