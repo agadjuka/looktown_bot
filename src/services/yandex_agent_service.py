@@ -102,13 +102,15 @@ class YandexAgentService:
     
     def _is_internal_server_error(self, error_message: str) -> bool:
         """
-        Проверяет, является ли ошибка "Internal server error".
+        Проверяет, является ли ошибка одной из ошибок, требующих повторной попытки:
+        - "Internal server error"
+        - "Empty response from API"
         
         :param error_message: Текст ошибки
-        :return: True, если это Internal server error
+        :return: True, если это ошибка, требующая повторной попытки
         """
         error_lower = error_message.lower()
-        return "internal server error" in error_lower
+        return "internal server error" in error_lower or "empty response from api" in error_lower
 
     async def _make_api_request(self, payload: dict) -> dict:
         """Выполнение запроса к Responses API (асинхронный, не блокирует event loop)"""
@@ -168,7 +170,7 @@ class YandexAgentService:
     
     async def _retry_internal_server_error(self, chat_id: str, user_text: str, first_error_message: str) -> dict:
         """
-        Выполняет повторную попытку при ошибке Internal server error.
+        Выполняет повторную попытку при ошибке Internal server error или Empty response from API.
         Если повторная попытка тоже возвращает ошибку, отправляет менеджер-алерт.
         
         :param chat_id: ID чата
@@ -177,7 +179,7 @@ class YandexAgentService:
         :return: Словарь с ответом для пользователя и менеджер-алертом (если нужно)
         """
         try:
-            logger.info("Выполняем повторную попытку при Internal server error", chat_id)
+            logger.info(f"Выполняем повторную попытку при ошибке: {first_error_message}", chat_id)
             
             # Получаем last_response_id из YDB
             previous_response_id = await asyncio.to_thread(
@@ -223,9 +225,9 @@ class YandexAgentService:
                 error_info = result.get("error", {})
                 error_message = error_info.get("message", "Неизвестная ошибка")
                 
-                # Если повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт
+                # Если повторная попытка тоже вернула Internal server error или Empty response, отправляем менеджер-алерт
                 if self._is_internal_server_error(error_message):
-                    logger.error("Повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт", chat_id)
+                    logger.error("Повторная попытка тоже вернула ошибку, отправляем менеджер-алерт", chat_id)
                     return self.escalation_service.handle_api_error(
                         error_message,
                         chat_id,
@@ -254,9 +256,24 @@ class YandexAgentService:
                 if "error" in result and result["error"]:
                     error_info = result["error"]
                     error_message = error_info.get("message", "Неизвестная ошибка")
+                    # Если повторная попытка тоже вернула Internal server error или Empty response, отправляем менеджер-алерт
+                    if self._is_internal_server_error(error_message):
+                        logger.error("Повторная попытка тоже вернула ошибку, отправляем менеджер-алерт", chat_id)
+                        return self.escalation_service.handle_api_error(
+                            error_message,
+                            chat_id,
+                            user_text
+                        )
                     return {"user_message": f"⚠️ Ошибка: {error_message}"}
                 else:
-                    raise Exception("Empty response from API")
+                    # Если повторная попытка тоже вернула Empty response from API, отправляем менеджер-алерт
+                    error_message = "Empty response from API"
+                    logger.error("Повторная попытка тоже вернула Empty response from API, отправляем менеджер-алерт", chat_id)
+                    return self.escalation_service.handle_api_error(
+                        error_message,
+                        chat_id,
+                        user_text
+                    )
             
             # Сохраняем response_id
             if response_id:
@@ -265,9 +282,9 @@ class YandexAgentService:
                     chat_id,
                     response_id
                 )
-                logger.ydb("Сохранен response_id (retry ISE)", chat_id)
+                logger.ydb("Сохранен response_id (retry)", chat_id)
             
-            logger.success("Повторная попытка при Internal server error выполнена успешно", chat_id)
+            logger.success("Повторная попытка выполнена успешно", chat_id)
             
             # Проверяем на эскалацию
             final_text = response_text
@@ -277,11 +294,11 @@ class YandexAgentService:
             
         except Exception as retry_error:
             error_msg = str(retry_error)
-            logger.error("Ошибка при повторной попытке Internal server error", error_msg)
+            logger.error("Ошибка при повторной попытке", error_msg)
             
-            # Если повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт
+            # Если повторная попытка тоже вернула Internal server error или Empty response, отправляем менеджер-алерт
             if self._is_internal_server_error(error_msg):
-                logger.error("Повторная попытка тоже вернула Internal server error в исключении, отправляем менеджер-алерт", chat_id)
+                logger.error("Повторная попытка тоже вернула ошибку в исключении, отправляем менеджер-алерт", chat_id)
                 return self.escalation_service.handle_api_error(
                     error_msg,
                     chat_id,
@@ -360,9 +377,9 @@ class YandexAgentService:
                 if error_code == "mcp_error" or "mcp" in error_message.lower():
                     return {"user_message": f"⚠️ Ошибка подключения к инструментам: {error_message}\n\nПопробуйте позже или обратитесь к администратору."}
                 
-                # Если это Internal server error, делаем повторную попытку
+                # Если это Internal server error или Empty response from API, делаем повторную попытку
                 if self._is_internal_server_error(error_message):
-                    logger.warning("Обнаружена ошибка Internal server error, делаем повторную попытку", chat_id)
+                    logger.warning(f"Обнаружена ошибка {error_message}, делаем повторную попытку", chat_id)
                     return await self._retry_internal_server_error(chat_id, user_text, error_message)
                 
                 return {"user_message": f"⚠️ Ошибка API: {error_message}"}
@@ -388,7 +405,10 @@ class YandexAgentService:
                     error_message = error_info.get("message", "Неизвестная ошибка")
                     return {"user_message": f"⚠️ Ошибка: {error_message}"}
                 else:
-                    raise Exception("Empty response from API")
+                    # Если это Empty response from API, делаем повторную попытку
+                    error_message = "Empty response from API"
+                    logger.warning("Обнаружена ошибка Empty response from API, делаем повторную попытку", chat_id)
+                    return await self._retry_internal_server_error(chat_id, user_text, error_message)
             
             # Сохраняем новый response_id в YDB через executor (не блокирует event loop)
             if response_id:
@@ -412,9 +432,9 @@ class YandexAgentService:
             error_msg = str(e)
             logger.error("Ошибка при работе с API", error_msg)
             
-            # Если это Internal server error, делаем повторную попытку
+            # Если это Internal server error или Empty response from API, делаем повторную попытку
             if self._is_internal_server_error(error_msg):
-                logger.warning("Обнаружена ошибка Internal server error в исключении, делаем повторную попытку", chat_id)
+                logger.warning(f"Обнаружена ошибка {error_msg} в исключении, делаем повторную попытку", chat_id)
                 return await self._retry_internal_server_error(chat_id, user_text, error_msg)
             
             # Если ошибка связана с цепочкой (слишком длинная/просрочена), очищаем контекст
