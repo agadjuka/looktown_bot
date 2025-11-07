@@ -35,12 +35,55 @@ class YandexAgentService:
         
         # Инициализация YDB клиента
         self.ydb_client = get_ydb_client()
+        
+        # Кэш для времени (обновляем раз в минуту)
+        self._time_cache = None
+        self._time_cache_timestamp = 0
     
     def _get_moscow_time(self) -> str:
-        """Получить текущую дату и время в московском часовом поясе"""
-        moscow_tz = pytz.timezone('Europe/Moscow')
-        moscow_time = datetime.now(moscow_tz)
-        return moscow_time.strftime("%d.%m.%Y %H:%M:%S")
+        """Получить текущее время и дату в московском часовом поясе через внешний API"""
+        current_time = time.time()
+        
+        # Используем кэш, если прошло меньше минуты
+        if self._time_cache and (current_time - self._time_cache_timestamp) < 60:
+            return self._time_cache
+        
+        try:
+            # Получаем точное время через WorldTimeAPI
+            response = requests.get(
+                'http://worldtimeapi.org/api/timezone/Europe/Moscow',
+                timeout=2
+            )
+            response.raise_for_status()
+            data = response.json()
+            datetime_str = data['datetime']
+            
+            # Преобразуем строку в datetime (формат: 2024-10-27T13:31:06.123456+03:00)
+            if datetime_str.endswith('Z'):
+                datetime_str = datetime_str[:-1] + '+00:00'
+            moscow_time = datetime.fromisoformat(datetime_str)
+            
+            # Форматируем
+            date_time_str = moscow_time.strftime("%Y-%m-%d %H:%M")
+            result = f"Текущее время: {date_time_str}"
+            
+            # Сохраняем в кэш
+            self._time_cache = result
+            self._time_cache_timestamp = current_time
+            
+            return result
+        except Exception:
+            # Fallback на системное время, если API недоступен
+            moscow_tz = pytz.timezone('Europe/Moscow')
+            moscow_time = datetime.now(moscow_tz)
+            date_time_str = moscow_time.strftime("%Y-%m-%d %H:%M")
+            result = f"Текущее время: {date_time_str}"
+            
+            # Кэшируем fallback тоже
+            self._time_cache = result
+            self._time_cache_timestamp = current_time
+            
+            return result
     
     async def _retry_with_backoff(self, coro_func, max_retries=3):
         """Ретраи с экспоненциальным backoff для async функций (не блокирует event loop)"""
