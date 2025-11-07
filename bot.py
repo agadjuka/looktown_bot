@@ -5,6 +5,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram.constants import ParseMode
 from service_factory import get_yandex_agent_service
 from src.services.logger_service import logger
+from src.services.date_normalizer import normalize_dates_in_text
+from src.services.time_normalizer import normalize_times_in_text
 
 load_dotenv()
 
@@ -52,11 +54,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     agent_response = await send_to_agent(user_message, chat_id)
     # Ожидаем словарь: {"user_message": str, "manager_alert": Optional[str]}
     user_message_text = agent_response.get("user_message") if isinstance(agent_response, dict) else str(agent_response)
+    # Нормализуем даты и время в ответе
+    user_message_text = normalize_dates_in_text(user_message_text)
+    user_message_text = normalize_times_in_text(user_message_text)
     await update.message.reply_text(user_message_text, parse_mode=ParseMode.MARKDOWN)
 
     # Временная заглушка: отправляем alert менеджера тем же пользователю вторым сообщением
     if isinstance(agent_response, dict) and agent_response.get("manager_alert"):
-        await update.message.reply_text(agent_response["manager_alert"], parse_mode=ParseMode.MARKDOWN)
+        manager_alert = normalize_dates_in_text(agent_response["manager_alert"])
+        manager_alert = normalize_times_in_text(manager_alert)
+        await update.message.reply_text(manager_alert, parse_mode=ParseMode.MARKDOWN)
     logger.telegram("Ответ отправлен", chat_id)
 
 def main():
