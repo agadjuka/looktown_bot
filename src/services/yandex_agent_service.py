@@ -100,6 +100,16 @@ class YandexAgentService:
                 delay = (2 ** attempt) + random.uniform(0, 1)
                 await asyncio.sleep(delay)
     
+    def _is_internal_server_error(self, error_message: str) -> bool:
+        """
+        Проверяет, является ли ошибка "Internal server error".
+        
+        :param error_message: Текст ошибки
+        :return: True, если это Internal server error
+        """
+        error_lower = error_message.lower()
+        return "internal server error" in error_lower
+
     async def _make_api_request(self, payload: dict) -> dict:
         """Выполнение запроса к Responses API (асинхронный, не блокирует event loop)"""
         # Пытаемся использовать IAM токен (для инструментов)
@@ -155,6 +165,131 @@ class YandexAgentService:
             raise Exception(f"API request failed with status {response.status_code}: {response.text}")
         
         return response.json()
+    
+    async def _retry_internal_server_error(self, chat_id: str, user_text: str, first_error_message: str) -> dict:
+        """
+        Выполняет повторную попытку при ошибке Internal server error.
+        Если повторная попытка тоже возвращает ошибку, отправляет менеджер-алерт.
+        
+        :param chat_id: ID чата
+        :param user_text: Исходное сообщение пользователя
+        :param first_error_message: Сообщение об ошибке из первой попытки
+        :return: Словарь с ответом для пользователя и менеджер-алертом (если нужно)
+        """
+        try:
+            logger.info("Выполняем повторную попытку при Internal server error", chat_id)
+            
+            # Получаем last_response_id из YDB
+            previous_response_id = await asyncio.to_thread(
+                self.ydb_client.get_last_response_id,
+                chat_id
+            )
+            
+            # Добавляем московское время в начало сообщения
+            moscow_time = self._get_moscow_time()
+            input_with_time = f"[{moscow_time}] {user_text}"
+            
+            # Формируем payload для повторного запроса (точно такой же, как первый)
+            payload = {
+                "prompt": {
+                    "id": self.agent_id,
+                    "variables": {}
+                },
+                "input": input_with_time,
+                "chat_options": {
+                    "chat_id": chat_id
+                },
+                "tool_choice": "auto",
+                "service_account_id": os.getenv("YANDEX_SERVICE_ACCOUNT_ID", "")
+            }
+            
+            # Добавляем previous_response_id если есть
+            if previous_response_id:
+                payload["previous_response_id"] = previous_response_id
+            
+            # Выполняем повторный запрос
+            result = await self._make_api_request(payload)
+            
+            # Сохраняем ответ для дебага
+            await asyncio.to_thread(
+                self.debug_service.save_response,
+                result,
+                f"{chat_id}_retry_ise"
+            )
+            
+            # Проверяем статус ответа
+            status = result.get("status", "")
+            if status == "failed":
+                error_info = result.get("error", {})
+                error_message = error_info.get("message", "Неизвестная ошибка")
+                
+                # Если повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт
+                if self._is_internal_server_error(error_message):
+                    logger.error("Повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт", chat_id)
+                    return self.escalation_service.handle_api_error(
+                        error_message,
+                        chat_id,
+                        user_text
+                    )
+                else:
+                    # Если другая ошибка, возвращаем её
+                    return {"user_message": f"⚠️ Ошибка API: {error_message}"}
+            
+            # Если запрос успешен, обрабатываем ответ как обычно
+            response_id = result.get("id")
+            response_text = ""
+            
+            # Извлекаем текст ответа
+            if "output" in result and isinstance(result["output"], list) and len(result["output"]) > 0:
+                for output_item in reversed(result["output"]):
+                    if output_item.get("type") == "message" and "content" in output_item:
+                        content = output_item["content"]
+                        if content and len(content) > 0:
+                            text_content = content[0].get("text", "")
+                            if not text_content.strip().startswith("{") and not "stage" in text_content:
+                                response_text = text_content
+                                break
+            
+            if not response_text:
+                if "error" in result and result["error"]:
+                    error_info = result["error"]
+                    error_message = error_info.get("message", "Неизвестная ошибка")
+                    return {"user_message": f"⚠️ Ошибка: {error_message}"}
+                else:
+                    raise Exception("Empty response from API")
+            
+            # Сохраняем response_id
+            if response_id:
+                await asyncio.to_thread(
+                    self.ydb_client.save_response_id,
+                    chat_id,
+                    response_id
+                )
+                logger.ydb("Сохранен response_id (retry ISE)", chat_id)
+            
+            logger.success("Повторная попытка при Internal server error выполнена успешно", chat_id)
+            
+            # Проверяем на эскалацию
+            final_text = response_text
+            if final_text.strip().startswith('[CALL_MANAGER]'):
+                return self.escalation_service.handle(final_text, chat_id)
+            return {"user_message": final_text}
+            
+        except Exception as retry_error:
+            error_msg = str(retry_error)
+            logger.error("Ошибка при повторной попытке Internal server error", error_msg)
+            
+            # Если повторная попытка тоже вернула Internal server error, отправляем менеджер-алерт
+            if self._is_internal_server_error(error_msg):
+                logger.error("Повторная попытка тоже вернула Internal server error в исключении, отправляем менеджер-алерт", chat_id)
+                return self.escalation_service.handle_api_error(
+                    error_msg,
+                    chat_id,
+                    user_text
+                )
+            
+            # Если другая ошибка, возвращаем её
+            return {"user_message": f"Ошибка при повторном запросе: {error_msg}"}
     
     async def send_to_agent(self, chat_id: str, user_text: str) -> dict:
         """Отправка сообщения агенту через Responses API с памятью (асинхронный, не блокирует event loop)"""
@@ -224,8 +359,13 @@ class YandexAgentService:
                 # Если ошибка связана с инструментами, возвращаем понятное сообщение
                 if error_code == "mcp_error" or "mcp" in error_message.lower():
                     return {"user_message": f"⚠️ Ошибка подключения к инструментам: {error_message}\n\nПопробуйте позже или обратитесь к администратору."}
-                else:
-                    return {"user_message": f"⚠️ Ошибка API: {error_message}"}
+                
+                # Если это Internal server error, делаем повторную попытку
+                if self._is_internal_server_error(error_message):
+                    logger.warning("Обнаружена ошибка Internal server error, делаем повторную попытку", chat_id)
+                    return await self._retry_internal_server_error(chat_id, user_text, error_message)
+                
+                return {"user_message": f"⚠️ Ошибка API: {error_message}"}
             
             # API возвращает объект с полем output
             if "output" in result and isinstance(result["output"], list) and len(result["output"]) > 0:
@@ -271,6 +411,11 @@ class YandexAgentService:
         except Exception as e:
             error_msg = str(e)
             logger.error("Ошибка при работе с API", error_msg)
+            
+            # Если это Internal server error, делаем повторную попытку
+            if self._is_internal_server_error(error_msg):
+                logger.warning("Обнаружена ошибка Internal server error в исключении, делаем повторную попытку", chat_id)
+                return await self._retry_internal_server_error(chat_id, user_text, error_msg)
             
             # Если ошибка связана с цепочкой (слишком длинная/просрочена), очищаем контекст
             if any(keyword in error_msg.lower() for keyword in ["chain", "expired", "too long", "цепочка", "просрочена"]):
