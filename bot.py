@@ -26,7 +26,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /start"""
     chat_id = str(update.effective_chat.id)
     logger.telegram("Команда /start", chat_id)
-    await update.message.reply_text('Привет! Я тестовый бот с интеграцией Яндекс.АИ. Отправь мне любое сообщение.')
+    await update.message.reply_text('Добрый день!\nНа связи менеджер LOOKTOWN 🌻\n\nЧем я могу вам помочь?')
 
 async def new_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик команды /new - сброс контекста"""
