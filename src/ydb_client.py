@@ -56,7 +56,7 @@ class YDBClient:
         return self.pool.retry_operation_sync(_tx)
     
     def init_schema(self):
-        """Создание таблицы для маппинга chat_id -> last_response_id"""
+        """Создание таблицы для маппинга chat_id -> last_response_id и thread_id"""
         create_table_query = """
         CREATE TABLE IF NOT EXISTS chat_threads (
             chat_id String,
@@ -93,11 +93,43 @@ class YDBClient:
             "$rid": response_id
         })
     
-    def reset_context(self, chat_id: str):
-        """Сброс контекста для чата (очистка last_response_id)"""
+    def get_thread_id(self, chat_id: str) -> Optional[str]:
+        """Получение thread_id по chat_id"""
+        query = """
+        DECLARE $id AS String; 
+        SELECT thread_id FROM chat_threads WHERE chat_id = $id;
+        """
+        result = self._execute_query(query, {"$id": chat_id})
+        rows = result[0].rows
+        return rows[0].thread_id.decode() if rows and rows[0].thread_id else None
+    
+    def save_thread_id(self, chat_id: str, thread_id: str):
+        """Сохранение маппинга chat_id -> thread_id"""
+        query = """
+        DECLARE $cid AS String; 
+        DECLARE $tid AS String;
+        UPSERT INTO chat_threads (chat_id, thread_id, updated_at)
+        VALUES ($cid, $tid, CurrentUtcTimestamp());
+        """
+        self._execute_query(query, {
+            "$cid": chat_id, 
+            "$tid": thread_id
+        })
+    
+    def reset_thread(self, chat_id: str):
+        """Сброс thread для чата"""
         query = """
         DECLARE $cid AS String;
-        UPDATE chat_threads SET last_response_id = NULL, updated_at = CurrentUtcTimestamp()
+        UPDATE chat_threads SET thread_id = NULL, updated_at = CurrentUtcTimestamp()
+        WHERE chat_id = $cid;
+        """
+        self._execute_query(query, {"$cid": chat_id})
+    
+    def reset_context(self, chat_id: str):
+        """Сброс контекста для чата (очистка last_response_id и thread_id)"""
+        query = """
+        DECLARE $cid AS String;
+        UPDATE chat_threads SET last_response_id = NULL, thread_id = NULL, updated_at = CurrentUtcTimestamp()
         WHERE chat_id = $cid;
         """
         self._execute_query(query, {"$cid": chat_id})

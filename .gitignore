@@ -84,3 +84,6 @@ tests/
 # Utility scripts (not needed in production)
 verify_services.py
 
+# YC Wine Assistant (reference implementation)
+YC Wine Assistant/
+

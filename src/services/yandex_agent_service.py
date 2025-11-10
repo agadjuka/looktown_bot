@@ -14,6 +14,8 @@ from .auth_service import AuthService
 from .debug_service import DebugService
 from .escalation_service import EscalationService
 from .logger_service import logger
+from ..graph.booking_graph import BookingGraph
+from .langgraph_service import LangGraphService
 
 
 class YandexAgentService:
@@ -36,9 +38,26 @@ class YandexAgentService:
         # Инициализация YDB клиента
         self.ydb_client = get_ydb_client()
         
-        # Кэш для времени (обновляем раз в минуту)
-        self._time_cache = None
-        self._time_cache_timestamp = 0
+        # Флаг использования LangGraph
+        self.use_langgraph = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
+        
+        # Ленивая инициализация LangGraph (только если используется)
+        self._langgraph_service = None
+        self._booking_graph = None
+        
+    @property
+    def langgraph_service(self) -> LangGraphService:
+        """Ленивая инициализация LangGraphService"""
+        if self._langgraph_service is None:
+            self._langgraph_service = LangGraphService()
+        return self._langgraph_service
+    
+    @property
+    def booking_graph(self) -> BookingGraph:
+        """Ленивая инициализация BookingGraph"""
+        if self._booking_graph is None:
+            self._booking_graph = BookingGraph(self.langgraph_service)
+        return self._booking_graph
     
     def _get_moscow_time(self) -> str:
         """Получить текущее время и дату в московском часовом поясе через внешний API"""
@@ -308,7 +327,85 @@ class YandexAgentService:
             # Если другая ошибка, возвращаем её
             return {"user_message": f"Ошибка при повторном запросе: {error_msg}"}
     
-    async def send_to_agent(self, chat_id: str, user_text: str) -> dict:
+    async def send_to_agent_langgraph(self, chat_id: str, user_text: str) -> dict:
+        """Отправка сообщения через LangGraph"""
+        try:
+            from ..graph.booking_state import BookingState
+            
+            # Получаем или создаём Thread
+            thread_id = await asyncio.to_thread(
+                self.ydb_client.get_thread_id,
+                chat_id
+            )
+            
+            if thread_id:
+                thread = self.langgraph_service.get_thread_by_id(thread_id)
+                if not thread:
+                    # Thread не найден, создаём новый
+                    thread = self.langgraph_service.create_thread()
+                    await asyncio.to_thread(
+                        self.ydb_client.save_thread_id,
+                        chat_id,
+                        thread.id
+                    )
+            else:
+                # Создаём новый Thread
+                thread = self.langgraph_service.create_thread()
+                await asyncio.to_thread(
+                    self.ydb_client.save_thread_id,
+                    chat_id,
+                    thread.id
+                )
+            
+            # Добавляем московское время
+            moscow_time = self._get_moscow_time()
+            input_with_time = f"[{moscow_time}] {user_text}"
+            
+            # Создаём начальное состояние
+            initial_state: BookingState = {
+                "message": input_with_time,
+                "thread": thread,
+                "stage": None,
+                "extracted_info": None,
+                "answer": "",
+                "manager_alert": None
+            }
+            
+            # Выполняем граф
+            result_state = await asyncio.to_thread(
+                self.booking_graph.invoke,
+                initial_state
+            )
+            
+            # Извлекаем ответ
+            answer = result_state.get("answer", "")
+            manager_alert = result_state.get("manager_alert")
+            
+            # Нормализуем даты и время в ответе
+            from .date_normalizer import normalize_dates_in_text
+            from .time_normalizer import normalize_times_in_text
+            
+            answer = normalize_dates_in_text(answer)
+            answer = normalize_times_in_text(answer)
+            
+            # Проверяем на эскалацию
+            if answer.strip().startswith('[CALL_MANAGER]'):
+                return self.escalation_service.handle(answer, chat_id)
+            
+            result = {"user_message": answer}
+            if manager_alert:
+                manager_alert = normalize_dates_in_text(manager_alert)
+                manager_alert = normalize_times_in_text(manager_alert)
+                result["manager_alert"] = manager_alert
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Ошибка в LangGraph: {e}", chat_id)
+            # Fallback к старому методу
+            return await self._send_to_agent_responses_api(chat_id, user_text)
+    
+    async def _send_to_agent_responses_api(self, chat_id: str, user_text: str) -> dict:
         """Отправка сообщения агенту через Responses API с памятью (асинхронный, не блокирует event loop)"""
         try:
             start_time = time.time()
@@ -515,11 +612,25 @@ class YandexAgentService:
             
             return {"user_message": f"Ошибка при работе с Responses API: {error_msg}"}
     
+    async def send_to_agent(self, chat_id: str, user_text: str) -> dict:
+        """Отправка сообщения агенту (обновлённый метод с поддержкой LangGraph)"""
+        # Если включён LangGraph, используем его
+        if self.use_langgraph:
+            return await self.send_to_agent_langgraph(chat_id, user_text)
+        
+        # Иначе используем старый метод с Responses API
+        return await self._send_to_agent_responses_api(chat_id, user_text)
+    
     async def reset_context(self, chat_id: str):
         """Сброс контекста для чата (асинхронный, не блокирует event loop)"""
         try:
+            # Сбрасываем и previous_response_id, и thread_id
             await asyncio.to_thread(
                 self.ydb_client.reset_context,
+                chat_id
+            )
+            await asyncio.to_thread(
+                self.ydb_client.reset_thread,
                 chat_id
             )
             logger.ydb("Контекст сброшен", chat_id)

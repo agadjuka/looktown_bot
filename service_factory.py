@@ -1,7 +1,7 @@
 """
 Фабрика для создания и инициализации сервисов
 """
-from src.services import AuthService, DebugService, YandexAgentService, EscalationService
+from src.services import AuthService, DebugService, YandexAgentService, EscalationService, LangGraphService
 
 
 class ServiceFactory:
@@ -12,6 +12,7 @@ class ServiceFactory:
         self._debug_service = None
         self._yandex_agent_service = None
         self._escalation_service = None
+        self._langgraph_service = None
     
     def get_auth_service(self) -> AuthService:
         """Получить экземпляр AuthService"""
@@ -39,6 +40,12 @@ class ServiceFactory:
             escalation_service = self.get_escalation_service()
             self._yandex_agent_service = YandexAgentService(auth_service, debug_service, escalation_service)
         return self._yandex_agent_service
+    
+    def get_langgraph_service(self) -> LangGraphService:
+        """Получить экземпляр LangGraphService"""
+        if self._langgraph_service is None:
+            self._langgraph_service = LangGraphService()
+        return self._langgraph_service
 
 
 # Глобальный экземпляр фабрики

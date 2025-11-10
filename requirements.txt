@@ -6,3 +6,6 @@ requests
 pytz
 fastapi
 uvicorn[standard]
+yandex-cloud-ml-sdk>=1.0.0
+langgraph>=0.2.0
+pydantic>=2.0.0
