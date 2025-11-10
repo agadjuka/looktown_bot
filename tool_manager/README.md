@@ -39,3 +39,4 @@ streamlit run tool_manager/app.py --server.port 8502
 - `app.py` - Streamlit приложение
 - `run.py` - скрипт запуска
 
+
