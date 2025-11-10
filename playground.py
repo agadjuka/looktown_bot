@@ -136,10 +136,33 @@ with chat_container:
             
             # Показываем метаданные если есть
             if "metadata" in message:
-                with st.expander("🔍 Детали", expanded=False):
-                    if "stage" in message["metadata"]:
-                        st.info(f"**Стадия:** `{message['metadata']['stage']}`")
-                    if "extracted_info" in message["metadata"]:
+                # Показываем стадию сразу, если есть
+                if "stage" in message["metadata"] and message["metadata"]["stage"]:
+                    stage_emoji = {
+                        "greeting": "👋",
+                        "booking": "📅",
+                        "cancel_booking": "❌",
+                        "reschedule": "🔄",
+                        "general": "💬",
+                        "unknown": "❓"
+                    }.get(message["metadata"]["stage"], "❓")
+                    st.caption(f"{stage_emoji} **Стадия:** `{message['metadata']['stage']}`")
+                
+                # Показываем агента сразу, если есть
+                if "agent_name" in message["metadata"] and message["metadata"]["agent_name"]:
+                    st.caption(f"🤖 **Агент:** `{message['metadata']['agent_name']}`")
+                
+                # Показываем использованные инструменты сразу, если есть
+                if "used_tools" in message["metadata"] and message["metadata"]["used_tools"]:
+                    tools = message["metadata"]["used_tools"]
+                    tools_text = ", ".join([f"`{tool}`" for tool in tools])
+                    st.caption(f"🔧 **Инструменты:** {tools_text}")
+                elif "used_tools" in message["metadata"]:
+                    st.caption("🔧 **Инструменты:** нет")
+                
+                # Дополнительные детали в expandable секции
+                if "extracted_info" in message["metadata"] and message["metadata"]["extracted_info"]:
+                    with st.expander("🔍 Детали", expanded=False):
                         st.json(message["metadata"]["extracted_info"])
 
 # Поле ввода
@@ -168,15 +191,30 @@ if user_input:
                     "stage": None,
                     "extracted_info": None,
                     "answer": "",
-                    "manager_alert": None
+                    "manager_alert": None,
+                    "agent_name": None,
+                    "used_tools": None
                 }
                 
                 # Выполняем граф
                 result_state = st.session_state.booking_graph.invoke(initial_state)
                 
+                # Показываем стадию сразу после определения
+                detected_stage = result_state.get("stage")
+                if detected_stage:
+                    stage_emoji = {
+                        "greeting": "👋",
+                        "booking": "📅",
+                        "cancel_booking": "❌",
+                        "reschedule": "🔄",
+                        "general": "💬",
+                        "unknown": "❓"
+                    }.get(detected_stage, "❓")
+                    st.info(f"{stage_emoji} **Определена стадия:** `{detected_stage}`")
+                
                 # Сохраняем состояние графа
                 graph_state_copy = {
-                    "stage": result_state.get("stage"),
+                    "stage": detected_stage,
                     "extracted_info": result_state.get("extracted_info"),
                     "timestamp": datetime.now().isoformat()
                 }
@@ -184,16 +222,28 @@ if user_input:
                 
                 # Получаем ответ
                 answer = result_state.get("answer", "Не получен ответ")
+                agent_name = result_state.get("agent_name", "Unknown")
+                used_tools = result_state.get("used_tools", [])
                 
                 # Показываем ответ
                 st.markdown(answer)
                 
-                # Показываем метаданные
+                # Показываем какой агент дал ответ
+                st.caption(f"🤖 **Ответ от агента:** `{agent_name}`")
+                
+                # Показываем использованные инструменты
+                if used_tools:
+                    tools_text = ", ".join([f"`{tool}`" for tool in used_tools])
+                    st.caption(f"🔧 **Использованные инструменты:** {tools_text}")
+                else:
+                    st.caption("🔧 **Использованные инструменты:** нет")
+                
+                # Показываем метаданные в expandable секции
                 with st.expander("🔍 Детали ответа", expanded=False):
-                    if result_state.get("stage"):
-                        st.info(f"**Определённая стадия:** `{result_state['stage']}`")
                     if result_state.get("extracted_info"):
                         st.json(result_state["extracted_info"])
+                    if used_tools:
+                        st.info(f"**Использованные инструменты:** {', '.join(used_tools)}")
                     if result_state.get("manager_alert"):
                         st.warning(f"**Alert для менеджера:** {result_state['manager_alert']}")
                 
@@ -203,8 +253,10 @@ if user_input:
                     "content": answer,
                     "timestamp": datetime.now().isoformat(),
                     "metadata": {
-                        "stage": result_state.get("stage"),
-                        "extracted_info": result_state.get("extracted_info")
+                        "stage": detected_stage,
+                        "extracted_info": result_state.get("extracted_info"),
+                        "agent_name": agent_name,
+                        "used_tools": used_tools
                     }
                 })
                 

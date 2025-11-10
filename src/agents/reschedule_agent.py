@@ -77,6 +77,7 @@ class RescheduleAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetBooking, CheckAvailableSlots, RescheduleBooking]
+            tools=[GetBooking, CheckAvailableSlots, RescheduleBooking],
+            agent_name="Агент переноса бронирований"
         )
 

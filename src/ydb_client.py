@@ -56,7 +56,7 @@ class YDBClient:
         return self.pool.retry_operation_sync(_tx)
     
     def init_schema(self):
-        """Создание таблицы для маппинга chat_id -> last_response_id и thread_id"""
+        """Создание таблиц для маппинга chat_id -> last_response_id, thread_id и assistant_id"""
         create_table_query = """
         CREATE TABLE IF NOT EXISTS chat_threads (
             chat_id String,
@@ -64,6 +64,13 @@ class YDBClient:
             last_response_id String,
             updated_at Timestamp,
             PRIMARY KEY (chat_id)
+        );
+        
+        CREATE TABLE IF NOT EXISTS assistants (
+            assistant_name String,
+            assistant_id String,
+            updated_at Timestamp,
+            PRIMARY KEY (assistant_name)
         );
         """
         def _tx(session):
@@ -133,6 +140,29 @@ class YDBClient:
         WHERE chat_id = $cid;
         """
         self._execute_query(query, {"$cid": chat_id})
+    
+    def get_assistant_id(self, assistant_name: str) -> Optional[str]:
+        """Получение assistant_id по имени"""
+        query = """
+        DECLARE $name AS String; 
+        SELECT assistant_id FROM assistants WHERE assistant_name = $name;
+        """
+        result = self._execute_query(query, {"$name": assistant_name})
+        rows = result[0].rows
+        return rows[0].assistant_id.decode() if rows and rows[0].assistant_id else None
+    
+    def save_assistant_id(self, assistant_name: str, assistant_id: str):
+        """Сохранение маппинга assistant_name -> assistant_id"""
+        query = """
+        DECLARE $name AS String; 
+        DECLARE $id AS String;
+        UPSERT INTO assistants (assistant_name, assistant_id, updated_at)
+        VALUES ($name, $id, CurrentUtcTimestamp());
+        """
+        self._execute_query(query, {
+            "$name": assistant_name, 
+            "$id": assistant_id
+        })
     
     def close(self):
         """Закрытие соединения с YDB"""

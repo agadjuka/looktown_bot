@@ -13,4 +13,6 @@ class BookingState(TypedDict):
     extracted_info: Optional[dict]  # Извлечённая информация
     answer: str                     # Финальный ответ пользователю
     manager_alert: Optional[str]    # Сообщение для менеджера (если нужно)
+    agent_name: Optional[str]       # Имя агента, который дал ответ
+    used_tools: Optional[list]     # Список использованных инструментов
 

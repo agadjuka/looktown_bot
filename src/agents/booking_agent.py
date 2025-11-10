@@ -69,6 +69,7 @@ class BookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[CheckAvailableSlots, CreateBooking, GetBooking]
+            tools=[CheckAvailableSlots, CreateBooking, GetBooking],
+            agent_name="Агент бронирования"
         )
 

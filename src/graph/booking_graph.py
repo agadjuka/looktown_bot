@@ -16,15 +16,32 @@ from ..services.logger_service import logger
 class BookingGraph:
     """Граф состояний для обработки бронирований"""
     
+    # Кэш для агентов (чтобы не создавать их заново при каждом создании графа)
+    _agents_cache = {}
+    
     def __init__(self, langgraph_service: LangGraphService):
         self.langgraph_service = langgraph_service
         
-        # Создаём агентов
-        self.stage_detector = StageDetectorAgent(langgraph_service)
-        self.booking_agent = BookingAgent(langgraph_service)
-        self.cancel_agent = CancelBookingAgent(langgraph_service)
-        self.reschedule_agent = RescheduleAgent(langgraph_service)
-        self.greeting_agent = GreetingAgent(langgraph_service)
+        # Используем кэш для агентов
+        cache_key = id(langgraph_service)
+        
+        if cache_key not in BookingGraph._agents_cache:
+            # Создаём агентов только если их ещё нет в кэше
+            BookingGraph._agents_cache[cache_key] = {
+                'stage_detector': StageDetectorAgent(langgraph_service),
+                'booking_agent': BookingAgent(langgraph_service),
+                'cancel_agent': CancelBookingAgent(langgraph_service),
+                'reschedule_agent': RescheduleAgent(langgraph_service),
+                'greeting_agent': GreetingAgent(langgraph_service)
+            }
+        
+        # Используем агентов из кэша
+        agents = BookingGraph._agents_cache[cache_key]
+        self.stage_detector = agents['stage_detector']
+        self.booking_agent = agents['booking_agent']
+        self.cancel_agent = agents['cancel_agent']
+        self.reschedule_agent = agents['reschedule_agent']
+        self.greeting_agent = agents['greeting_agent']
         
         # Создаём граф
         self.graph = self._create_graph()
@@ -91,8 +108,9 @@ class BookingGraph:
         thread = state["thread"]
         
         answer = self.greeting_agent(message, thread)
+        used_tools = [tool["name"] for tool in self.greeting_agent._last_tool_calls] if hasattr(self.greeting_agent, '_last_tool_calls') and self.greeting_agent._last_tool_calls else []
         
-        return {"answer": answer}
+        return {"answer": answer, "agent_name": "GreetingAgent", "used_tools": used_tools}
     
     def _handle_booking(self, state: BookingState) -> BookingState:
         """Обработка бронирования"""
@@ -101,8 +119,9 @@ class BookingGraph:
         thread = state["thread"]
         
         answer = self.booking_agent(message, thread)
+        used_tools = [tool["name"] for tool in self.booking_agent._last_tool_calls] if hasattr(self.booking_agent, '_last_tool_calls') and self.booking_agent._last_tool_calls else []
         
-        return {"answer": answer}
+        return {"answer": answer, "agent_name": "BookingAgent", "used_tools": used_tools}
     
     def _handle_cancel(self, state: BookingState) -> BookingState:
         """Обработка отмены"""
@@ -111,8 +130,9 @@ class BookingGraph:
         thread = state["thread"]
         
         answer = self.cancel_agent(message, thread)
+        used_tools = [tool["name"] for tool in self.cancel_agent._last_tool_calls] if hasattr(self.cancel_agent, '_last_tool_calls') and self.cancel_agent._last_tool_calls else []
         
-        return {"answer": answer}
+        return {"answer": answer, "agent_name": "CancelBookingAgent", "used_tools": used_tools}
     
     def _handle_reschedule(self, state: BookingState) -> BookingState:
         """Обработка переноса"""
@@ -121,8 +141,9 @@ class BookingGraph:
         thread = state["thread"]
         
         answer = self.reschedule_agent(message, thread)
+        used_tools = [tool["name"] for tool in self.reschedule_agent._last_tool_calls] if hasattr(self.reschedule_agent, '_last_tool_calls') and self.reschedule_agent._last_tool_calls else []
         
-        return {"answer": answer}
+        return {"answer": answer, "agent_name": "RescheduleAgent", "used_tools": used_tools}
     
     def invoke(self, state: BookingState) -> BookingState:
         """Выполнение графа"""

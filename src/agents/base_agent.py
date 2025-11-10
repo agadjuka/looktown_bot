@@ -17,10 +17,12 @@ class BaseAgent:
         langgraph_service: LangGraphService,
         instruction: str,
         tools: list = None,
-        assistant: Optional[Assistant] = None
+        assistant: Optional[Assistant] = None,
+        agent_name: str = None
     ):
         self.langgraph_service = langgraph_service
         self.instruction = instruction
+        self.agent_name = agent_name or self.__class__.__name__
         
         if assistant:
             self.assistant = assistant
@@ -33,10 +35,11 @@ class BaseAgent:
             else:
                 self.tools = {}
             
-            # Создаём Assistant
-            self.assistant = langgraph_service.create_assistant(
+            # Создаём Assistant с именем (или используем существующего)
+            self.assistant = langgraph_service.get_or_create_assistant(
                 instruction=instruction,
-                tools=tool_list
+                tools=tool_list,
+                name=self.agent_name
             )
         
         # Инициализируем список для отслеживания tool_calls

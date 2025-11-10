@@ -51,6 +51,7 @@ class GreetingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None
+            tools=None,
+            agent_name="Агент приветствия"
         )
 

@@ -153,7 +153,8 @@ class StageDetectorAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None
+            tools=None,
+            agent_name="Определитель стадий диалога"
         )
     
     def detect_stage(self, message: str, thread: Thread) -> StageDetection:

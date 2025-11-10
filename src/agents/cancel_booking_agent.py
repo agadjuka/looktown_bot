@@ -68,6 +68,7 @@ class CancelBookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetBooking, CancelBooking]
+            tools=[GetBooking, CancelBooking],
+            agent_name="Агент отмены бронирований"
         )
 
