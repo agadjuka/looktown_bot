@@ -58,8 +58,14 @@ class BaseAgent:
             run = self.assistant.run(thread)
             res = run.wait()
             
-            # Обрабатываем Function Calls
-            if res.tool_calls:
+            # Цикл обработки Function Calls - может быть несколько раундов вызовов инструментов
+            max_iterations = 10  # Защита от бесконечного цикла
+            iteration = 0
+            
+            while res.tool_calls and iteration < max_iterations:
+                iteration += 1
+                logger.debug(f"Итерация обработки tool_calls: {iteration}")
+                
                 result = []
                 for f in res.tool_calls:
                     logger.debug(f"Вызов функции {f.function.name}", f"args={f.function.arguments}")
@@ -75,20 +81,39 @@ class BaseAgent:
                                 logger.error(f"Не удалось распарсить аргументы функции {f.function.name}")
                                 continue
                         
-                        obj = fn(**args)
-                        x = obj.process(thread) if hasattr(obj, 'process') else str(obj)
-                        result.append({"name": f.function.name, "content": x})
-                        
-                        # Сохраняем информацию о вызове для отслеживания
-                        self._last_tool_calls.append({
+                        try:
+                            obj = fn(**args)
+                            x = obj.process(thread) if hasattr(obj, 'process') else str(obj)
+                            result.append({"name": f.function.name, "content": x})
+                            
+                            # Сохраняем информацию о вызове для отслеживания
+                            self._last_tool_calls.append({
+                                "name": f.function.name,
+                                "args": args,
+                                "result": x
+                            })
+                        except Exception as e:
+                            logger.error(f"Ошибка при выполнении инструмента {f.function.name}: {e}")
+                            result.append({
+                                "name": f.function.name,
+                                "content": f"Ошибка при выполнении инструмента: {str(e)}"
+                            })
+                    else:
+                        logger.warning(f"Инструмент {f.function.name} не найден в списке доступных инструментов")
+                        result.append({
                             "name": f.function.name,
-                            "args": args,
-                            "result": x
+                            "content": f"Инструмент {f.function.name} недоступен"
                         })
                 
                 if result:
                     run.submit_tool_results(result)
-                    res = run.wait()
+                    res = run.wait()  # Получаем следующий ответ, который может содержать новые tool_calls
+                else:
+                    # Если нет результатов для отправки, прерываем цикл
+                    break
+            
+            if iteration >= max_iterations:
+                logger.warning(f"Достигнуто максимальное количество итераций обработки tool_calls: {max_iterations}")
             
             return res.text
         
