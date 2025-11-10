@@ -1,20 +1,15 @@
 """
-Инструменты для работы с системой бронирования
+Инструменты для работы с каталогом услуг
 """
-from .booking_tools import (
-    CheckAvailableSlots,
-    CreateBooking,
-    GetBooking,
-    CancelBooking,
-    RescheduleBooking
+from .service_tools import (
+    GetCategories,
+    GetServices
 )
 
 __all__ = [
-    "CheckAvailableSlots",
-    "CreateBooking",
-    "GetBooking",
-    "CancelBooking",
-    "RescheduleBooking"
+    # Инструменты каталога услуг
+    "GetCategories",
+    "GetServices",
 ]
 
 

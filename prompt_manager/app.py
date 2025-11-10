@@ -296,16 +296,12 @@ elif st.session_state.get('current_view') == 'create' or st.session_state.get('s
                         tool_list = []
                         if selected_tools:
                             logger.info(f"Обработка инструментов: {selected_tools}")
-                            from src.agents.tools.booking_tools import (
-                                CheckAvailableSlots, CreateBooking, GetBooking,
-                                CancelBooking, RescheduleBooking
+                            from src.agents.tools.service_tools import (
+                                GetCategories, GetServices
                             )
                             tool_mapping = {
-                                'CheckAvailableSlots': CheckAvailableSlots,
-                                'CreateBooking': CreateBooking,
-                                'GetBooking': GetBooking,
-                                'CancelBooking': CancelBooking,
-                                'RescheduleBooking': RescheduleBooking
+                                'GetCategories': GetCategories,
+                                'GetServices': GetServices
                             }
                             tools_classes = [tool_mapping[t] for t in selected_tools if t in tool_mapping]
                             logger.info(f"Классы инструментов: {[t.__name__ for t in tools_classes]}")

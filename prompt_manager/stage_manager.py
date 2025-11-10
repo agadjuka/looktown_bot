@@ -71,16 +71,10 @@ class StageManager:
             
             # Определяем используемые инструменты
             tools = []
-            if 'CheckAvailableSlots' in content:
-                tools.append('CheckAvailableSlots')
-            if 'CreateBooking' in content:
-                tools.append('CreateBooking')
-            if 'GetBooking' in content:
-                tools.append('GetBooking')
-            if 'CancelBooking' in content:
-                tools.append('CancelBooking')
-            if 'RescheduleBooking' in content:
-                tools.append('RescheduleBooking')
+            if 'GetCategories' in content:
+                tools.append('GetCategories')
+            if 'GetServices' in content:
+                tools.append('GetServices')
             
             # Определяем стадию из имени файла (ключ стадии)
             stage = self._extract_stage_from_file(file_path)
@@ -198,26 +192,17 @@ class StageManager:
         tools_imports = []
         tools_list = []
         
-        if 'CheckAvailableSlots' in tools:
-            tools_imports.append('CheckAvailableSlots')
-            tools_list.append('CheckAvailableSlots')
-        if 'CreateBooking' in tools:
-            tools_imports.append('CreateBooking')
-            tools_list.append('CreateBooking')
-        if 'GetBooking' in tools:
-            tools_imports.append('GetBooking')
-            tools_list.append('GetBooking')
-        if 'CancelBooking' in tools:
-            tools_imports.append('CancelBooking')
-            tools_list.append('CancelBooking')
-        if 'RescheduleBooking' in tools:
-            tools_imports.append('RescheduleBooking')
-            tools_list.append('RescheduleBooking')
+        if 'GetCategories' in tools:
+            tools_imports.append('GetCategories')
+            tools_list.append('GetCategories')
+        if 'GetServices' in tools:
+            tools_imports.append('GetServices')
+            tools_list.append('GetServices')
         
         imports = ""
         tools_param = "None"
         if tools_imports:
-            imports = f"from .tools.booking_tools import {', '.join(tools_imports)}\n"
+            imports = f"from .tools.service_tools import {', '.join(tools_imports)}\n"
             tools_param = f"[{', '.join(tools_list)}]"
         
         file_content = f'''"""
@@ -619,11 +604,8 @@ class {class_name}(BaseAgent):
     def get_available_tools(self) -> List[str]:
         """Получить список доступных инструментов"""
         return [
-            'CheckAvailableSlots',
-            'CreateBooking',
-            'GetBooking',
-            'CancelBooking',
-            'RescheduleBooking'
+            'GetCategories',
+            'GetServices'
         ]
     
     def get_stage_detector_instruction(self) -> str:

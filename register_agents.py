@@ -51,8 +51,19 @@ def parse_agent_file(file_path: Path) -> dict:
         agent_name_match = re.search(r'agent_name\s*=\s*["\']([^"\']+)["\']', content)
         agent_name = agent_name_match.group(1) if agent_name_match else class_name
         
-        # Определяем используемые инструменты (пока не используем, но можем определить)
+        # Определяем используемые инструменты из импортов
         tools = []
+        # Ищем импорты инструментов из service_tools
+        tools_import_match = re.search(r'from\s+\.tools\.service_tools\s+import\s+([^\n]+)', content)
+        if tools_import_match:
+            tools_str = tools_import_match.group(1)
+            # Извлекаем имена классов инструментов (убираем возможные переносы строк)
+            tools_str = tools_str.replace('\n', ' ').strip()
+            # Разбиваем по запятым и очищаем
+            tools_list = [t.strip() for t in tools_str.split(',')]
+            # Фильтруем только валидные имена классов (GetCategories, GetServices)
+            valid_tools = ['GetCategories', 'GetServices']
+            tools = [t for t in tools_list if t in valid_tools]
         
         # Определяем стадию из имени файла
         stage = file_path.stem
@@ -78,6 +89,8 @@ def register_all_agents(force: bool = False):
     logger.info("=== НАЧАЛО РЕГИСТРАЦИИ АГЕНТОВ ===")
     if force:
         logger.info("⚠️ Режим FORCE: существующие агенты будут пересозданы")
+    else:
+        logger.info("ℹ️ Режим по умолчанию: существующие агенты будут пересозданы (старые удаляются)")
     
     try:
         # Инициализируем сервисы
@@ -115,24 +128,53 @@ def register_all_agents(force: bool = False):
                 
                 # Проверяем, есть ли уже запись в YDB
                 existing_id = ydb_client.get_assistant_id(agent['name'])
-                if existing_id and not force:
-                    logger.info(f"⚠️ Агент '{agent['name']}' уже зарегистрирован в YDB с ID: {existing_id}")
-                    logger.info("Пропускаем (используйте --force для пересоздания)")
-                    registered.append({
-                        'agent': agent,
-                        'assistant_id': existing_id,
-                        'status': 'exists'
-                    })
-                    continue
                 
-                if existing_id and force:
-                    logger.info(f"⚠️ Пересоздание агента '{agent['name']}' (старый ID: {existing_id})")
+                # Если найден существующий ассистент - удаляем его
+                if existing_id:
+                    logger.info(f"⚠️ Найден существующий ассистент '{agent['name']}' с ID: {existing_id}")
+                    logger.info("Удаление старого ассистента из Yandex Cloud...")
+                    try:
+                        old_assistant = langgraph_service.sdk.assistants.get(existing_id)
+                        old_assistant.delete()
+                        logger.info(f"✅ Старый ассистент удалён из Yandex Cloud")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось удалить старый ассистент из Yandex Cloud: {e}")
+                        # Продолжаем работу, возможно ассистент уже был удалён
+                    
+                    # Удаляем из YDB
+                    logger.info("Удаление записи из YDB...")
+                    try:
+                        ydb_client.delete_assistant_id(agent['name'])
+                        logger.info(f"✅ Запись удалена из YDB")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось удалить запись из YDB: {e}")
+                
+                # Подготавливаем инструменты
+                tool_list = []
+                if agent['tools']:
+                    logger.info(f"Найдены инструменты в агенте: {agent['tools']}")
+                    try:
+                        from src.agents.tools.service_tools import GetCategories, GetServices
+                        tool_mapping = {
+                            'GetCategories': GetCategories,
+                            'GetServices': GetServices
+                        }
+                        tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
+                        if tools_classes:
+                            tool_list = [langgraph_service.sdk.tools.function(t) for t in tools_classes]
+                            logger.info(f"✅ Инструменты подготовлены: {[t.__name__ for t in tools_classes]}")
+                        else:
+                            logger.warning(f"⚠️ Не удалось найти классы инструментов для: {agent['tools']}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Ошибка при подготовке инструментов: {e}")
+                else:
+                    logger.info("Инструменты не найдены в агенте")
                 
                 # Создаем Assistant в Yandex Cloud
-                logger.info("Создание Assistant в Yandex Cloud...")
+                logger.info("Создание нового Assistant в Yandex Cloud...")
                 assistant = langgraph_service.create_assistant(
                     instruction=agent['instruction'],
-                    tools=None,  # Пока без инструментов, как вы просили
+                    tools=tool_list if tool_list else None,
                     name=agent['name']
                 )
                 
@@ -168,22 +210,36 @@ def register_all_agents(force: bool = False):
             
             if detector_info:
                 existing_id = ydb_client.get_assistant_id(detector_info['name'])
-                if existing_id and not force:
-                    logger.info(f"⚠️ StageDetectorAgent уже зарегистрирован с ID: {existing_id}")
-                else:
-                    if existing_id and force:
-                        logger.info(f"⚠️ Пересоздание StageDetectorAgent (старый ID: {existing_id})")
-                    assistant = langgraph_service.create_assistant(
-                        instruction=detector_info['instruction'],
-                        tools=None,
-                        name=detector_info['name']
-                    )
-                    logger.info(f"✅ StageDetectorAgent создан: ID={assistant.id}")
-                    registered.append({
-                        'agent': detector_info,
-                        'assistant_id': assistant.id,
-                        'status': 'created' if not existing_id else 'recreated'
-                    })
+                
+                # Если найден существующий ассистент - удаляем его
+                if existing_id:
+                    logger.info(f"⚠️ Найден существующий StageDetectorAgent с ID: {existing_id}")
+                    logger.info("Удаление старого ассистента из Yandex Cloud...")
+                    try:
+                        old_assistant = langgraph_service.sdk.assistants.get(existing_id)
+                        old_assistant.delete()
+                        logger.info(f"✅ Старый StageDetectorAgent удалён из Yandex Cloud")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось удалить старый ассистент: {e}")
+                    
+                    # Удаляем из YDB
+                    try:
+                        ydb_client.delete_assistant_id(detector_info['name'])
+                        logger.info(f"✅ Запись удалена из YDB")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось удалить запись из YDB: {e}")
+                
+                assistant = langgraph_service.create_assistant(
+                    instruction=detector_info['instruction'],
+                    tools=None,
+                    name=detector_info['name']
+                )
+                logger.info(f"✅ StageDetectorAgent создан: ID={assistant.id}")
+                registered.append({
+                    'agent': detector_info,
+                    'assistant_id': assistant.id,
+                    'status': 'created' if not existing_id else 'recreated'
+                })
         except Exception as e:
             logger.error(f"❌ Ошибка при регистрации StageDetectorAgent: {e}", exc_info=True)
             failed.append({

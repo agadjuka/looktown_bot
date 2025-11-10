@@ -67,10 +67,27 @@ class LangGraphService:
             existing = self.find_assistant_by_name(name)
             if existing:
                 logger.info(f"Найден существующий ассистент: {name}")
+                
+                # КРИТИЧНО: Если указаны инструменты, нужно обновить ассистента
+                # Yandex Cloud Assistant не поддерживает обновление инструментов через update(),
+                # поэтому нужно пересоздать ассистента с новыми инструментами
+                if tools is not None and len(tools) > 0:
+                    logger.info(f"Обнаружены инструменты для ассистента '{name}'. Пересоздаём ассистента с инструментами.")
+                    # Удаляем старый ассистент из YDB и создаём нового
+                    try:
+                        ydb_client = get_ydb_client()
+                        ydb_client.delete_assistant_id(name)
+                        logger.info(f"Старый ID ассистента '{name}' удалён из YDB")
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить старый ID: {e}")
+                    # Создаём нового с инструментами
+                    return self.create_assistant(instruction=instruction, tools=tools, name=name)
+                
                 # Обновляем инструкцию если она изменилась
                 if instruction:
                     try:
                         existing.update(instruction=instruction)
+                        logger.info(f"Инструкция ассистента '{name}' обновлена")
                     except Exception as e:
                         logger.warning(f"Не удалось обновить инструкцию: {e}")
                 return existing

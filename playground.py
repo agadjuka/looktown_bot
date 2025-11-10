@@ -324,7 +324,7 @@ st.markdown(f"""
 ### 📝 Информация
 - **Thread ID:** Используется для сохранения контекста диалога
 - **Стадии:** {stages_text}
-- **Инструменты:** `CheckAvailableSlots`, `CreateBooking`, `GetBooking`, `CancelBooking`, `RescheduleBooking`
+- **Инструменты:** `GetCategories`, `GetServices`
 - **Агенты:** {agents_text}
 """)
 

@@ -183,6 +183,23 @@ class YDBClient:
             logger.error(f"❌ Ошибка сохранения assistant_id в YDB: {e}", exc_info=True)
             raise
     
+    def delete_assistant_id(self, assistant_name: str):
+        """Удаление маппинга assistant_name -> assistant_id"""
+        from .services.logger_service import logger
+        logger.info(f"=== УДАЛЕНИЕ ASSISTANT ID ИЗ YDB ===")
+        logger.info(f"assistant_name: {assistant_name}")
+        
+        try:
+            query = """
+            DECLARE $name AS String;
+            DELETE FROM assistants WHERE assistant_name = $name;
+            """
+            self._execute_query(query, {"$name": assistant_name})
+            logger.info(f"✅ Assistant ID для '{assistant_name}' удалён из YDB")
+        except Exception as e:
+            logger.error(f"❌ Ошибка удаления assistant_id из YDB: {e}", exc_info=True)
+            raise
+    
     def close(self):
         """Закрытие соединения с YDB"""
         if self.driver:
