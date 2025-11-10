@@ -69,6 +69,8 @@ if "langgraph_service" not in st.session_state:
         patch_base_agent()
         
         st.session_state.langgraph_service = LangGraphService()
+        # Очищаем кэш перед созданием нового графа, чтобы агенты пересоздались с актуальными инструментами
+        BookingGraph.clear_cache()
         st.session_state.booking_graph = BookingGraph(st.session_state.langgraph_service)
         st.session_state.thread = st.session_state.langgraph_service.create_thread()
         st.session_state.messages = []
@@ -170,8 +172,32 @@ with chat_container:
                 elif "used_tools" in message["metadata"]:
                     st.caption("🔧 **Инструменты:** нет")
                 
-                # Дополнительные детали в expandable секции (если есть другая информация)
-                # extracted_info больше не используется после упрощения
+                # Показываем детали инструментов в expandable секции для сохранённых сообщений
+                if "tool_calls_results" in message["metadata"] and message["metadata"]["tool_calls_results"]:
+                    tool_calls_results = message["metadata"]["tool_calls_results"]
+                    with st.expander("🔍 Детали ответа", expanded=False):
+                        st.markdown("### 📋 Ответы от инструментов:")
+                        for tool_call in tool_calls_results:
+                            tool_name = tool_call.get('name', 'Unknown')
+                            tool_args = tool_call.get('args', {})
+                            tool_result = tool_call.get('result', 'N/A')
+                            
+                            with st.expander(f"🔧 {tool_name}", expanded=False):
+                                st.markdown(f"**Аргументы:**")
+                                st.json(tool_args)
+                                st.markdown(f"**Результат:**")
+                                # Форматируем результат в зависимости от типа
+                                if isinstance(tool_result, str):
+                                    try:
+                                        import json
+                                        parsed = json.loads(tool_result)
+                                        st.json(parsed)
+                                    except (json.JSONDecodeError, TypeError):
+                                        st.text(tool_result)
+                                elif isinstance(tool_result, (dict, list)):
+                                    st.json(tool_result)
+                                else:
+                                    st.text(str(tool_result))
 
 # Поле ввода
 user_input = st.chat_input("Введите сообщение...")
@@ -233,6 +259,30 @@ if user_input:
                 agent_name = result_state.get("agent_name", "Unknown")
                 used_tools = result_state.get("used_tools", [])
                 
+                # Получаем полные результаты инструментов из агента
+                tool_calls_results = []
+                if agent_name and hasattr(st.session_state.booking_graph, '_get_agent_by_name'):
+                    agent = st.session_state.booking_graph._get_agent_by_name(agent_name)
+                    if agent and hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
+                        tool_calls_results = agent._last_tool_calls
+                else:
+                    # Альтернативный способ получения tool_calls из графа
+                    agent_map = {
+                        "GreetingAgent": getattr(st.session_state.booking_graph, 'greeting_agent', None),
+                        "BookingAgent": getattr(st.session_state.booking_graph, 'booking_agent', None),
+                        "BookingToMasterAgent": getattr(st.session_state.booking_graph, 'booking_to_master_agent', None),
+                        "FindWindowAgent": getattr(st.session_state.booking_graph, 'find_window_agent', None),
+                        "CancelBookingAgent": getattr(st.session_state.booking_graph, 'cancel_agent', None),
+                        "RescheduleAgent": getattr(st.session_state.booking_graph, 'reschedule_agent', None),
+                        "ViewMyBookingAgent": getattr(st.session_state.booking_graph, 'view_my_booking_agent', None),
+                        "CallManagerAgent": getattr(st.session_state.booking_graph, 'call_manager_agent', None),
+                        "InformationGatheringAgent": getattr(st.session_state.booking_graph, 'information_gathering_agent', None),
+                        "FallbackAgent": getattr(st.session_state.booking_graph, 'fallback_agent', None),
+                    }
+                    agent = agent_map.get(agent_name)
+                    if agent and hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
+                        tool_calls_results = agent._last_tool_calls
+                
                 # Показываем ответ
                 st.markdown(answer)
                 
@@ -250,6 +300,32 @@ if user_input:
                 with st.expander("🔍 Детали ответа", expanded=False):
                     if used_tools:
                         st.info(f"**Использованные инструменты:** {', '.join(used_tools)}")
+                    
+                    # Показываем полные ответы от инструментов
+                    if tool_calls_results:
+                        st.markdown("### 📋 Ответы от инструментов:")
+                        for i, tool_call in enumerate(tool_calls_results, 1):
+                            tool_name = tool_call.get('name', 'Unknown')
+                            tool_args = tool_call.get('args', {})
+                            tool_result = tool_call.get('result', 'N/A')
+                            
+                            with st.expander(f"🔧 {tool_name}", expanded=True):
+                                st.markdown(f"**Аргументы:**")
+                                st.json(tool_args)
+                                st.markdown(f"**Результат:**")
+                                # Форматируем результат в зависимости от типа
+                                if isinstance(tool_result, str):
+                                    # Пытаемся распарсить JSON, если это строка
+                                    try:
+                                        parsed = json.loads(tool_result)
+                                        st.json(parsed)
+                                    except (json.JSONDecodeError, TypeError):
+                                        st.text(tool_result)
+                                elif isinstance(tool_result, (dict, list)):
+                                    st.json(tool_result)
+                                else:
+                                    st.text(str(tool_result))
+                    
                     if result_state.get("manager_alert"):
                         st.warning(f"**Alert для менеджера:** {result_state['manager_alert']}")
                 
@@ -261,7 +337,8 @@ if user_input:
                     "metadata": {
                         "stage": detected_stage,
                         "agent_name": agent_name,
-                        "used_tools": used_tools
+                        "used_tools": used_tools,
+                        "tool_calls_results": tool_calls_results
                     }
                 })
                 
@@ -324,7 +401,7 @@ st.markdown(f"""
 ### 📝 Информация
 - **Thread ID:** Используется для сохранения контекста диалога
 - **Стадии:** {stages_text}
-- **Инструменты:** `GetCategories`, `GetServices`
+- **Инструменты:** `GetCategories`, `GetServices`, `BookTimes`
 - **Агенты:** {agents_text}
 """)
 

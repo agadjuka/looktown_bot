@@ -61,8 +61,8 @@ def parse_agent_file(file_path: Path) -> dict:
             tools_str = tools_str.replace('\n', ' ').strip()
             # Разбиваем по запятым и очищаем
             tools_list = [t.strip() for t in tools_str.split(',')]
-            # Фильтруем только валидные имена классов (GetCategories, GetServices)
-            valid_tools = ['GetCategories', 'GetServices']
+            # Фильтруем только валидные имена классов
+            valid_tools = ['GetCategories', 'GetServices', 'BookTimes']
             tools = [t for t in tools_list if t in valid_tools]
         
         # Определяем стадию из имени файла
@@ -154,10 +154,11 @@ def register_all_agents(force: bool = False):
                 if agent['tools']:
                     logger.info(f"Найдены инструменты в агенте: {agent['tools']}")
                     try:
-                        from src.agents.tools.service_tools import GetCategories, GetServices
+                        from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes
                         tool_mapping = {
                             'GetCategories': GetCategories,
-                            'GetServices': GetServices
+                            'GetServices': GetServices,
+                            'BookTimes': BookTimes
                         }
                         tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
                         if tools_classes:

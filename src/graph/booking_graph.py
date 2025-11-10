@@ -30,6 +30,7 @@ class BookingGraph:
     def clear_cache(cls):
         """Очистить кэш агентов (полезно после пересоздания Assistant)"""
         cls._agents_cache.clear()
+        logger.info("✅ Кэш агентов очищен")
     
     def __init__(self, langgraph_service: LangGraphService):
         self.langgraph_service = langgraph_service

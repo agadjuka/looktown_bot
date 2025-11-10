@@ -22,14 +22,7 @@ except ImportError:
 class GetCategories(BaseModel):
     """
     Получить список всех категорий услуг с их ID.
-    
-    Используй этот инструмент, когда:
-    - Клиент спрашивает "какие у вас есть услуги?" или "что вы предлагаете?"
-    - Клиент хочет узнать, какие категории услуг доступны в салоне
-    - Нужно показать клиенту полный список категорий (Маникюр, Педикюр, Массаж и т.д.)
-    
-    Инструмент возвращает список всех категорий с их ID, которые затем можно использовать
-    для получения конкретных услуг через инструмент GetServices.
+    Используй когда клиент спрашивает "какие у вас есть услуги?" или "что вы предлагаете?"
     """
     
     def process(self, thread: Thread) -> str:
@@ -51,7 +44,7 @@ class GetCategories(BaseModel):
                 categories.append(f"{cat_id}. {category_name}")
             
             result = "Доступные категории услуг:\n\n" + "\n".join(categories)
-            result += "\n\nДля получения услуг категории используйте инструмент GetServices с указанием ID категории."
+            result += "\n\nДля получения услуг категории используйте GetServices с указанием ID категории."
             
             return result
             
@@ -68,21 +61,13 @@ class GetCategories(BaseModel):
 
 class GetServices(BaseModel):
     """
-    Получить список всех услуг указанной категории с ценами и уровнями мастеров.
-    
-    Используй этот инструмент, когда:
-    - Клиент спрашивает "какие виды маникюра у вас есть?" или "что есть в категории массаж?"
-    - Клиент хочет узнать конкретные услуги внутри категории
-    - Нужно показать клиенту список услуг с ценами для выбора
-    
-    Сначала используй GetCategories, чтобы получить ID нужной категории, затем вызывай
-    этот инструмент с указанием category_id.
+    Получить список услуг указанной категории с ценами и ID услуг.
+    Используй когда клиент спрашивает "какие виды маникюра?" или "что есть в категории массаж?"
+    Сначала вызови GetCategories для получения ID категории.
     """
     
     category_id: str = Field(
-        description="ID категории услуг (например, '1' для Маникюра, '2' для Педикюра, '3' для Услуг для мужчин). "
-                   "Обязательно сначала вызови GetCategories, чтобы получить актуальный список всех категорий с их ID. "
-                   "ID всегда является строкой (например, '1', '2', '13')."
+        description="ID категории (строка, например '1', '2'). Получи из GetCategories."
     )
     
     def process(self, thread: Thread) -> str:
@@ -124,8 +109,9 @@ class GetServices(BaseModel):
                 name = service.get('name', 'Неизвестно')
                 price = service.get('prices', 'Не указана')
                 master_level = service.get('master_level')
+                service_id = service.get('id', 'Не указан')
                 
-                service_line = f"  • {name} - {price} руб."
+                service_line = f"  • {name} (ID: {service_id}) - {price} руб."
                 if master_level:
                     service_line += f" ({master_level})"
                 
@@ -142,4 +128,85 @@ class GetServices(BaseModel):
         except Exception as e:
             logger.error(f"Ошибка при получении услуг: {e}")
             return f"Ошибка при получении услуг: {str(e)}"
+
+
+class BookTimes(BaseModel):
+    """
+    Найти доступные временные слоты для записи на услугу.
+    Используй когда клиент выбрал услугу и дату - нужно найти свободное время.
+    service_id получай из GetServices (каждая услуга имеет ID: число).
+    date в формате YYYY-MM-DD (например "2025-11-12").
+    """
+    
+    service_id: int = Field(
+        description="ID услуги (число). Получи из GetServices - каждая услуга имеет формат 'Название (ID: число)'."
+    )
+    
+    date: str = Field(
+        description="Дата в формате YYYY-MM-DD (например '2025-11-12'). Преобразуй относительные даты ('сегодня', 'завтра') в этот формат."
+    )
+    
+    master_name: Optional[str] = Field(
+        default=None,
+        description="Имя мастера (опционально). Если указано - слоты только у этого мастера."
+    )
+    
+    def process(self, thread: Thread) -> str:
+        """
+        Поиск доступных временных слотов для записи
+        
+        Returns:
+            Отформатированный список доступных временных интервалов
+        """
+        try:
+            import asyncio
+            from .yclients_service import YclientsService
+            from .book_times_logic import find_best_slots
+            
+            # Создаем сервис (он сам возьмет переменные окружения)
+            try:
+                yclients_service = YclientsService()
+            except ValueError as e:
+                return f"Ошибка конфигурации: {str(e)}. Проверьте переменные окружения AUTH_HEADER/AuthenticationToken и COMPANY_ID/CompanyID."
+            
+            # Запускаем async функцию синхронно
+            result = asyncio.run(
+                find_best_slots(
+                    yclients_service=yclients_service,
+                    service_id=self.service_id,
+                    date=self.date,
+                    master_name=self.master_name
+                )
+            )
+            
+            # Форматируем результат
+            if result.get('error'):
+                return f"Ошибка: {result['error']}"
+            
+            service_title = result.get('service_title', 'Услуга')
+            master_name = result.get('master_name')
+            slots = result.get('slots', [])
+            
+            if not slots:
+                if master_name:
+                    return f"К сожалению, на {self.date} у мастера {master_name} нет свободных слотов для услуги '{service_title}'."
+                else:
+                    return f"К сожалению, на {self.date} нет свободных слотов для услуги '{service_title}'."
+            
+            # Форматируем список слотов
+            slots_text = "\n".join([f"  • {slot}" for slot in slots])
+            
+            result_text = f"Доступные временные слоты для услуги '{service_title}' на {self.date}:\n\n{slots_text}"
+            
+            if master_name:
+                result_text = f"Доступные временные слоты у мастера {master_name} для услуги '{service_title}' на {self.date}:\n\n{slots_text}"
+            
+            return result_text
+            
+        except ValueError as e:
+            logger.error(f"Ошибка конфигурации BookTimes: {e}")
+            return f"Ошибка конфигурации: {str(e)}"
+        except Exception as e:
+            logger.error(f"Ошибка при поиске слотов: {e}", exc_info=True)
+            return f"Ошибка при поиске доступных слотов: {str(e)}"
 

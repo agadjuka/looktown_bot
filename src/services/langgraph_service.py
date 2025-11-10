@@ -20,7 +20,7 @@ class LangGraphService:
             raise ValueError("Не заданы YANDEX_FOLDER_ID или YANDEX_API_KEY_SECRET")
         
         self.sdk = YCloudML(folder_id=folder_id, auth=api_key)
-        self.model = self.sdk.models.completions("yandexgpt", model_version="rc")
+        self.model = self.sdk.models.completions("gpt://b1g7c2htkq0v3rfat0ra/gpt-oss-120b/latest")
     
     def create_thread(self, ttl_days: int = 30) -> Thread:
         """Создание нового Thread"""

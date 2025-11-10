@@ -75,6 +75,8 @@ class StageManager:
                 tools.append('GetCategories')
             if 'GetServices' in content:
                 tools.append('GetServices')
+            if 'BookTimes' in content:
+                tools.append('BookTimes')
             
             # Определяем стадию из имени файла (ключ стадии)
             stage = self._extract_stage_from_file(file_path)
@@ -198,6 +200,9 @@ class StageManager:
         if 'GetServices' in tools:
             tools_imports.append('GetServices')
             tools_list.append('GetServices')
+        if 'BookTimes' in tools:
+            tools_imports.append('BookTimes')
+            tools_list.append('BookTimes')
         
         imports = ""
         tools_param = "None"
@@ -605,7 +610,8 @@ class {class_name}(BaseAgent):
         """Получить список доступных инструментов"""
         return [
             'GetCategories',
-            'GetServices'
+            'GetServices',
+            'BookTimes'
         ]
     
     def get_stage_detector_instruction(self) -> str:
