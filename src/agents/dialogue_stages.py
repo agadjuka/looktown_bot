@@ -11,4 +11,5 @@ class DialogueStage(str, Enum):
     CANCEL_BOOKING = "cancel_booking"  # Отмена записи
     RESCHEDULE = "reschedule"           # Перенос записи
     SALON_INFO = "salon_info"          # О салоне
-    GENERAL = "general"                # Общий вопрос    UNKNOWN = "unknown"                # Неопределённая стадия
+    GENERAL = "general"                # Общий вопрос
+    UNKNOWN = "unknown"                # Неопределённая стадия

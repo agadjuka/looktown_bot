@@ -143,6 +143,7 @@ with chat_container:
                         "booking": "📅",
                         "cancel_booking": "❌",
                         "reschedule": "🔄",
+                        "salon_info": "ℹ️",
                         "general": "💬",
                         "unknown": "❓"
                     }.get(message["metadata"]["stage"], "❓")
@@ -207,6 +208,7 @@ if user_input:
                         "booking": "📅",
                         "cancel_booking": "❌",
                         "reschedule": "🔄",
+                        "salon_info": "ℹ️",
                         "general": "💬",
                         "unknown": "❓"
                     }.get(detected_stage, "❓")
@@ -283,12 +285,44 @@ if user_input:
 
 # Футер с информацией
 st.divider()
-st.markdown("""
+
+# Динамически получаем стадии из enum
+stages_list = [stage.value for stage in DialogueStage]
+stages_text = ", ".join([f"`{stage}`" for stage in stages_list])
+
+# Динамически получаем список агентов из BookingGraph
+try:
+    # Получаем агентов из кэша BookingGraph
+    agents_list = []
+    if hasattr(st.session_state, 'booking_graph') and st.session_state.booking_graph:
+        # Получаем все агенты из графа
+        agents_list.append("StageDetectorAgent")
+        if hasattr(st.session_state.booking_graph, 'greeting_agent'):
+            agents_list.append("GreetingAgent")
+        if hasattr(st.session_state.booking_graph, 'booking_agent'):
+            agents_list.append("BookingAgent")
+        if hasattr(st.session_state.booking_graph, 'cancel_agent'):
+            agents_list.append("CancelBookingAgent")
+        if hasattr(st.session_state.booking_graph, 'reschedule_agent'):
+            agents_list.append("RescheduleAgent")
+        if hasattr(st.session_state.booking_graph, 'salon_info_agent'):
+            agents_list.append("SalonInfoAgent")
+    
+    # Если список пустой, используем дефолтный
+    if not agents_list:
+        agents_list = ["StageDetectorAgent", "GreetingAgent", "BookingAgent", "CancelBookingAgent", "RescheduleAgent"]
+    
+    agents_text = ", ".join([f"`{agent}`" for agent in agents_list])
+except Exception:
+    # Fallback к дефолтному списку
+    agents_text = "`StageDetectorAgent`, `GreetingAgent`, `BookingAgent`, `CancelBookingAgent`, `RescheduleAgent`"
+
+st.markdown(f"""
 ### 📝 Информация
 - **Thread ID:** Используется для сохранения контекста диалога
-- **Стадии:** `greeting`, `booking`, `cancel_booking`, `reschedule`, `general`, `unknown`
+- **Стадии:** {stages_text}
 - **Инструменты:** `CheckAvailableSlots`, `CreateBooking`, `GetBooking`, `CancelBooking`, `RescheduleBooking`
-- **Агенты:** `StageDetectorAgent`, `GreetingAgent`, `BookingAgent`, `CancelBookingAgent`, `RescheduleAgent`
+- **Агенты:** {agents_text}
 """)
 
 
