@@ -73,13 +73,21 @@ class LangGraphService:
                 # поэтому нужно пересоздать ассистента с новыми инструментами
                 if tools is not None and len(tools) > 0:
                     logger.info(f"Обнаружены инструменты для ассистента '{name}'. Пересоздаём ассистента с инструментами.")
-                    # Удаляем старый ассистент из YDB и создаём нового
+                    # Удаляем старый ассистент из Yandex Cloud
+                    try:
+                        existing.delete()
+                        logger.info(f"Старый ассистент '{name}' удалён из Yandex Cloud")
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить старый ассистент из Yandex Cloud: {e}")
+                    
+                    # Удаляем старый ассистент из YDB
                     try:
                         ydb_client = get_ydb_client()
                         ydb_client.delete_assistant_id(name)
                         logger.info(f"Старый ID ассистента '{name}' удалён из YDB")
                     except Exception as e:
-                        logger.warning(f"Не удалось удалить старый ID: {e}")
+                        logger.warning(f"Не удалось удалить старый ID из YDB: {e}")
+                    
                     # Создаём нового с инструментами
                     return self.create_assistant(instruction=instruction, tools=tools, name=name)
                 
