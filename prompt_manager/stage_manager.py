@@ -23,6 +23,8 @@ class StageManager:
         self.graph_file = self.project_root / "src" / "graph" / "booking_graph.py"
         self.dialogue_stages_file = self.project_root / "src" / "agents" / "dialogue_stages.py"
         self.stage_detector_file = self.project_root / "src" / "agents" / "stage_detector_agent.py"
+        self.stage_detector_template_file = self.project_root / "src" / "agents" / "stage_detector_prompt_template.txt"
+        self.stage_descriptions_file = self.project_root / "src" / "agents" / "stage_descriptions.json"
     
     def get_all_stages(self) -> List[Dict]:
         """Получить все стадии (агенты)"""
@@ -625,97 +627,98 @@ class {class_name}(BaseAgent):
         ]
     
     def get_stage_detector_instruction(self) -> str:
-        """Получить промпт StageDetectorAgent (упрощённый формат - генерируется автоматически)"""
+        """Получить промпт StageDetectorAgent из файла"""
         try:
-            from src.agents.dialogue_stages import DialogueStage
             from src.agents.stage_detector_agent import StageDetectorAgent
-            
-            # Генерируем промпт так же, как в StageDetectorAgent
-            stages_list = []
-            for stage in DialogueStage:
-                try:
-                    # Используем classmethod для получения описания
-                    desc = StageDetectorAgent._get_stage_description(stage.value)
-                    if not desc:
-                        # Если описание пустое, используем значение по умолчанию
-                        desc = f"Стадия {stage.value}"
-                    stages_list.append(f"- {stage.value} - {desc}")
-                except Exception as e:
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Ошибка при получении описания для стадии {stage.value}: {e}")
-                    stages_list.append(f"- {stage.value} - Стадия {stage.value}")
-            
-            stages_text = "\n".join(stages_list)
-            
-            instruction = f"""Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
-
-Доступные стадии:
-{stages_text}
-
-Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
-            
-            return instruction
+            # Используем метод класса для построения промпта
+            return StageDetectorAgent._build_instruction()
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
             logger.error(f"Ошибка при генерации промпта определителя: {e}", exc_info=True)
-            # Возвращаем базовый промпт даже при ошибке
-            return """Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
-
-Доступные стадии:
-- greeting - Приветствие, начало диалога, прощание
-- booking - Бронирование, запись на услугу
-- cancel_booking - Отмена записи
-- reschedule - Перенос записи на другое время
-- salon_info - Вопросы о салоне, рассказ о салоне
-- general - Общие вопросы о услугах, ценах, мастерах
-- unknown - Неопределённая стадия, если не подходит ни одна
-
-Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
+            return ""
     
     def save_stage_detector_instruction(self, new_instruction: str) -> bool:
-        """Сохранить промпт StageDetectorAgent (упрощённый формат - не используется)"""
-        # В упрощённом формате промпт генерируется автоматически из enum
-        # Редактирование промпта через интерфейс не поддерживается
-        # Можно только редактировать описания стадий через add_stage_to_detector
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.warning("Попытка сохранить промпт определителя - в упрощённом формате промпт генерируется автоматически")
-        return False
-    
-    def add_stage_to_detector(self, stage_key: str, stage_name: str, stage_description: str) -> bool:
-        """Добавить описание стадии в промпт StageDetectorAgent (упрощённый формат)"""
+        """Сохранить базовый промпт StageDetectorAgent в файл шаблона"""
         try:
-            # Обновляем описание стадии в StageDetectorAgent
-            from src.agents.stage_detector_agent import StageDetectorAgent
+            if not self.stage_detector_template_file.exists():
+                # Создаём файл если его нет
+                self.stage_detector_template_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # Формируем краткое описание из stage_description
-            # Если это многострочный текст, берём первую строку или первые 100 символов
-            if '\n' in stage_description:
-                short_description = stage_description.split('\n')[0].strip()
-            else:
-                short_description = stage_description.strip()
+            # Удаляем список стадий из промпта перед сохранением (он будет добавлен автоматически)
+            # Ищем маркер {STAGES_LIST} или секцию со списком стадий
+            lines = new_instruction.split('\n')
+            result_lines = []
+            skip_until_marker = False
             
-            # Ограничиваем длину описания
-            if len(short_description) > 100:
-                short_description = short_description[:97] + "..."
+            for line in lines:
+                # Если нашли маркер или начало списка стадий
+                if '{STAGES_LIST}' in line or '**СПИСОК СТАДИЙ:**' in line:
+                    result_lines.append('**СПИСОК СТАДИЙ:**\n{STAGES_LIST}')
+                    skip_until_marker = True
+                    continue
+                
+                # Пропускаем строки со стадиями (начинаются с "- ")
+                if skip_until_marker:
+                    if line.strip().startswith('- ') and ':' in line:
+                        continue
+                    elif line.strip() == '' or not line.strip().startswith('- '):
+                        skip_until_marker = False
+                        result_lines.append(line)
+                        continue
+                else:
+                    result_lines.append(line)
             
-            # Обновляем описание в словаре
-            StageDetectorAgent.update_stage_description(stage_key, short_description)
+            # Сохраняем шаблон
+            template_content = '\n'.join(result_lines)
+            with open(self.stage_detector_template_file, 'w', encoding='utf-8') as f:
+                f.write(template_content)
             
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info("✅ Шаблон промпта определителя стадий сохранён")
             return True
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка при обновлении описания стадии: {e}")
+            logger.error(f"Ошибка при сохранении шаблона промпта: {e}", exc_info=True)
+            return False
+    
+    def add_stage_to_detector(self, stage_key: str, stage_name: str, stage_description: str) -> bool:
+        """Добавить описание стадии в JSON файл с описаниями"""
+        try:
+            from src.agents.stage_detector_agent import StageDetectorAgent
+            
+            # Сохраняем описание в JSON файл
+            StageDetectorAgent.update_stage_description(stage_key, stage_description)
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"✅ Описание стадии '{stage_key}' добавлено в определитель")
+            return True
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при добавлении описания стадии: {e}", exc_info=True)
             return False
     
     def remove_stage_from_detector(self, stage_key: str, stage_name: str) -> bool:
-        """Удалить стадию из промпта StageDetectorAgent (упрощённый формат)"""
-        # В упрощённом формате промпт генерируется автоматически из enum
-        # Стадия автоматически исчезнет из промпта при следующем запуске
-        return True
+        """Удалить описание стадии из JSON файла"""
+        try:
+            from src.agents.stage_detector_agent import StageDetectorAgent
+            
+            # Удаляем описание из JSON файла
+            StageDetectorAgent.remove_stage_description(stage_key)
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"✅ Описание стадии '{stage_key}' удалено из определителя")
+            return True
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при удалении описания стадии: {e}", exc_info=True)
+            return False
     
     def remove_stage_from_detector_old(self, stage_key: str, stage_name: str) -> bool:
         """Удалить описание стадии из промпта StageDetectorAgent"""
