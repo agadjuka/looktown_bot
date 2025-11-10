@@ -18,8 +18,7 @@ class BaseAgent:
         instruction: str,
         tools: list = None,
         assistant: Optional[Assistant] = None,
-        agent_name: str = None,
-        skip_checks: bool = False
+        agent_name: str = None
     ):
         self.langgraph_service = langgraph_service
         self.instruction = instruction
@@ -37,12 +36,10 @@ class BaseAgent:
                 self.tools = {}
             
             # Создаём Assistant с именем (или используем существующего)
-            # skip_checks передаётся через langgraph_service._skip_checks или явно
             self.assistant = langgraph_service.get_or_create_assistant(
                 instruction=instruction,
                 tools=tool_list,
-                name=self.agent_name,
-                skip_checks=skip_checks
+                name=self.agent_name
             )
         
         # Инициализируем список для отслеживания tool_calls
@@ -67,12 +64,25 @@ class BaseAgent:
             logger.debug(f"Результат run.wait() для агента {self.agent_name}:")
             logger.debug(f"  - Тип res: {type(res)}")
             logger.debug(f"  - res is None: {res is None}")
-            if res is not None:
-                logger.debug(f"  - Атрибуты res: {[attr for attr in dir(res) if not attr.startswith('_')]}")
-                if hasattr(res, 'text'):
-                    logger.debug(f"  - res.text: {repr(res.text[:200]) if res.text else 'None/Empty'}")
-                if hasattr(res, 'tool_calls'):
-                    logger.debug(f"  - res.tool_calls: {res.tool_calls}")
+            
+            if res is None:
+                error_msg = "Run завершился без результата (res is None)"
+                logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
+                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, message={message[:100]}")
+                raise RuntimeError("run is failed and don't have a message result")
+            
+            # Проверяем статус через безопасные атрибуты (не вызывающие исключения)
+            res_is_failed = getattr(res, 'is_failed', False)
+            res_status = getattr(res, 'status', None)
+            res_status_name = getattr(res, 'status_name', None)
+            res_error = getattr(res, 'error', None)
+            
+            logger.debug(f"  - Атрибуты res: {[attr for attr in dir(res) if not attr.startswith('_')]}")
+            logger.debug(f"  - res.is_failed: {res_is_failed}")
+            logger.debug(f"  - res.status: {res_status}")
+            logger.debug(f"  - res.status_name: {res_status_name}")
+            if res_error:
+                logger.debug(f"  - res.error: {res_error}")
             
             # Логируем информацию о run объекте
             try:
@@ -91,30 +101,40 @@ class BaseAgent:
                 logger.debug(f"  - Не удалось получить информацию о run: {e}")
             
             # Проверяем результат после первого wait()
-            # Если res равен None или не имеет атрибута text, значит run завершился с ошибкой
-            if res is None:
-                error_msg = "Run завершился без результата (res is None)"
+            # Если run завершился с ошибкой, проверяем через is_failed или status
+            if res_is_failed:
+                error_msg = f"Run завершился с ошибкой (is_failed=True, status={res_status}, status_name={res_status_name})"
                 logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
-                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, message={message[:100]}")
+                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, message={message[:200]}")
+                if res_error:
+                    logger.error(f"Ошибка run: {res_error}")
                 raise RuntimeError("run is failed and don't have a message result")
             
-            if not hasattr(res, 'text'):
-                error_msg = "Run завершился без атрибута text"
+            # Только после проверки статуса пытаемся получить text
+            try:
+                res_text = res.text
+                logger.debug(f"  - res.text: {repr(res_text[:200]) if res_text else 'None/Empty'}")
+            except (ValueError, AttributeError) as e:
+                error_msg = f"Не удалось получить res.text: {e}"
                 logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
-                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, res_type={type(res)}, res_attrs={[attr for attr in dir(res) if not attr.startswith('_')]}")
-                logger.error(f"Сообщение агента: {message[:200]}")
+                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, is_failed={res_is_failed}, status={res_status}")
                 raise RuntimeError("run is failed and don't have a message result")
+            
+            # Проверяем tool_calls безопасно
+            res_tool_calls = getattr(res, 'tool_calls', None)
+            if res_tool_calls:
+                logger.debug(f"  - res.tool_calls: {res_tool_calls}")
             
             # Цикл обработки Function Calls - может быть несколько раундов вызовов инструментов
             max_iterations = 10  # Защита от бесконечного цикла
             iteration = 0
             
-            while res.tool_calls and iteration < max_iterations:
+            while res_tool_calls and iteration < max_iterations:
                 iteration += 1
                 logger.debug(f"Итерация обработки tool_calls: {iteration}")
                 
                 result = []
-                for f in res.tool_calls:
+                for f in res_tool_calls:
                     logger.debug(f"Вызов функции {f.function.name}", f"args={f.function.arguments}")
                     
                     if f.function.name in self.tools:
@@ -160,23 +180,33 @@ class BaseAgent:
                     logger.debug(f"Результат run.wait() в цикле (итерация {iteration}):")
                     logger.debug(f"  - Тип res: {type(res)}")
                     logger.debug(f"  - res is None: {res is None}")
-                    if res is not None:
-                        logger.debug(f"  - Атрибуты res: {[attr for attr in dir(res) if not attr.startswith('_')]}")
-                        if hasattr(res, 'text'):
-                            logger.debug(f"  - res.text: {repr(res.text[:200]) if res.text else 'None/Empty'}")
                     
-                    # Проверяем результат после каждого wait() в цикле
                     if res is None:
                         error_msg = "Run завершился без результата во время обработки tool_calls (res is None)"
                         logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
                         logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, итерация={iteration}, tool_calls={len(result)}")
                         raise RuntimeError("run is failed and don't have a message result")
                     
-                    if not hasattr(res, 'text'):
-                        error_msg = "Run завершился без атрибута text во время обработки tool_calls"
+                    # Проверяем статус через безопасные атрибуты
+                    res_is_failed = getattr(res, 'is_failed', False)
+                    res_status = getattr(res, 'status', None)
+                    res_error = getattr(res, 'error', None)
+                    
+                    logger.debug(f"  - res.is_failed: {res_is_failed}, res.status: {res_status}")
+                    if res_error:
+                        logger.debug(f"  - res.error: {res_error}")
+                    
+                    # Проверяем результат после каждого wait() в цикле
+                    if res_is_failed:
+                        error_msg = f"Run завершился с ошибкой во время обработки tool_calls (is_failed=True, status={res_status})"
                         logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
-                        logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, итерация={iteration}, res_type={type(res)}, res_attrs={[attr for attr in dir(res) if not attr.startswith('_')]}")
+                        logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, итерация={iteration}, tool_calls={len(result)}")
+                        if res_error:
+                            logger.error(f"Ошибка run: {res_error}")
                         raise RuntimeError("run is failed and don't have a message result")
+                    
+                    # Безопасно получаем tool_calls для следующей итерации
+                    res_tool_calls = getattr(res, 'tool_calls', None)
                 else:
                     # Если нет результатов для отправки, прерываем цикл
                     break
@@ -187,11 +217,6 @@ class BaseAgent:
             # Проверяем наличие текста перед возвратом
             logger.debug(f"Финальная проверка результата для агента {self.agent_name}:")
             logger.debug(f"  - res is None: {res is None}")
-            if res is not None:
-                logger.debug(f"  - hasattr(res, 'text'): {hasattr(res, 'text')}")
-                if hasattr(res, 'text'):
-                    logger.debug(f"  - res.text is None: {res.text is None}")
-                    logger.debug(f"  - res.text значение: {repr(res.text[:200]) if res.text else 'None/Empty'}")
             
             if res is None:
                 error_msg = "Run завершился без результата (res is None)"
@@ -199,17 +224,40 @@ class BaseAgent:
                 logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, message={message[:200]}, итераций={iteration}")
                 raise RuntimeError("run is failed and don't have a message result")
             
-            if not hasattr(res, 'text') or res.text is None:
-                error_msg = "Run завершился без результата сообщения (res.text отсутствует или None)"
+            # Финальная проверка статуса
+            res_is_failed = getattr(res, 'is_failed', False)
+            res_status = getattr(res, 'status', None)
+            res_error = getattr(res, 'error', None)
+            
+            logger.debug(f"  - res.is_failed: {res_is_failed}, res.status: {res_status}")
+            
+            if res_is_failed:
+                error_msg = f"Run завершился с ошибкой перед возвратом (is_failed=True, status={res_status})"
                 logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
-                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, res_type={type(res)}")
-                logger.error(f"Детали res: hasattr(text)={hasattr(res, 'text')}, text_value={getattr(res, 'text', 'ATTR_NOT_EXISTS')}")
+                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, message={message[:200]}, итераций={iteration}")
+                if res_error:
+                    logger.error(f"Ошибка run: {res_error}")
+                raise RuntimeError("run is failed and don't have a message result")
+            
+            # Безопасно получаем text через try-except
+            try:
+                res_text = res.text
+                if res_text is None:
+                    error_msg = "Run завершился без результата сообщения (res.text is None)"
+                    logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
+                    logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, is_failed={res_is_failed}, status={res_status}")
+                    raise RuntimeError("run is failed and don't have a message result")
+                
+                logger.debug(f"  - res.text значение: {repr(res_text[:200]) if res_text else 'None/Empty'}")
+                logger.debug(f"Успешно получен ответ от агента {self.agent_name}, длина текста: {len(res_text)}")
+                return res_text
+            except (ValueError, AttributeError) as e:
+                error_msg = f"Не удалось получить res.text: {e}"
+                logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
+                logger.error(f"Детали: run_id={getattr(run, 'id', 'N/A')}, is_failed={res_is_failed}, status={res_status}")
                 logger.error(f"Доступные атрибуты res: {[attr for attr in dir(res) if not attr.startswith('_')]}")
                 logger.error(f"Сообщение агента: {message[:200]}")
                 raise RuntimeError("run is failed and don't have a message result")
-            
-            logger.debug(f"Успешно получен ответ от агента {self.agent_name}, длина текста: {len(res.text)}")
-            return res.text
         
         except Exception as e:
             import traceback

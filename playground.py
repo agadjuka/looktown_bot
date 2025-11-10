@@ -68,8 +68,8 @@ if "langgraph_service" not in st.session_state:
         # Применяем патч для отслеживания инструментов
         patch_base_agent()
         
-        # Создаём сервис с пропуском проверок для Playground
-        st.session_state.langgraph_service = LangGraphService(skip_checks=True)
+        # Создаём сервис для Playground
+        st.session_state.langgraph_service = LangGraphService()
         # Очищаем кэш перед созданием нового графа, чтобы агенты пересоздались с актуальными инструментами
         BookingGraph.clear_cache()
         st.session_state.booking_graph = BookingGraph(st.session_state.langgraph_service)

@@ -12,7 +12,7 @@ from .logger_service import logger
 class LangGraphService:
     """Сервис для работы с LangGraph и Assistant API"""
     
-    def __init__(self, skip_checks: bool = False):
+    def __init__(self):
         folder_id = os.getenv("YANDEX_FOLDER_ID")
         api_key = os.getenv("YANDEX_API_KEY_SECRET")
         
@@ -21,7 +21,6 @@ class LangGraphService:
         
         self.sdk = YCloudML(folder_id=folder_id, auth=api_key)
         self.model = self.sdk.models.completions("gpt://b1g7c2htkq0v3rfat0ra/gpt-oss-120b/latest")
-        self._skip_checks = skip_checks
     
     def create_thread(self, ttl_days: int = 30) -> Thread:
         """Создание нового Thread"""
@@ -39,7 +38,11 @@ class LangGraphService:
             return None
     
     def find_assistant_by_name(self, name: str):
-        """Поиск существующего Assistant по имени через YDB"""
+        """Поиск существующего Assistant по имени через YDB
+        
+        Args:
+            name: Имя ассистента
+        """
         try:
             ydb_client = get_ydb_client()
             assistant_id = ydb_client.get_assistant_id(name)
@@ -51,8 +54,8 @@ class LangGraphService:
                     logger.info(f"Успешно загружен ассистент '{name}' по ID: {assistant_id}")
                     return assistant
                 except Exception as e:
-                    logger.warning(f"Ассистент с ID {assistant_id} не найден в Yandex Cloud, удаляем из YDB: {e}")
-                    # Ассистент был удалён, удаляем из YDB
+                    # Просто возвращаем None, не удаляя из YDB
+                    logger.info(f"Ассистент с ID {assistant_id} не найден в Yandex Cloud: {e}")
                     return None
             
             logger.info(f"Ассистент '{name}' не найден в YDB")
@@ -61,69 +64,23 @@ class LangGraphService:
             logger.warning(f"Ошибка при поиске ассистента по имени: {e}")
             return None
     
-    def get_or_create_assistant(self, instruction: str, tools: list = None, name: str = None, skip_checks: bool = None):
+    def get_or_create_assistant(self, instruction: str, tools: list = None, name: str = None):
         """Получить существующего Assistant по имени или создать нового
         
         Args:
             instruction: Инструкция для ассистента
             tools: Список инструментов
             name: Имя ассистента
-            skip_checks: Если True, пропускает проверки и обновления (для Playground). Если None, используется значение из self._skip_checks
         """
-        # Используем значение из параметра или из атрибута сервиса
-        if skip_checks is None:
-            skip_checks = self._skip_checks
-        
-        # Если skip_checks=True, просто используем существующего или создаём нового без проверок
-        if skip_checks:
-            if name:
-                existing = self.find_assistant_by_name(name)
-                if existing:
-                    logger.info(f"Используем существующего ассистента без проверок: {name}")
-                    return existing
-            # Если не нашли или имя не указано - создаём нового без сохранения в YDB
-            return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=True)
-        
         # Если имя указано, пытаемся найти существующего
         if name:
             existing = self.find_assistant_by_name(name)
             if existing:
-                logger.info(f"Найден существующий ассистент: {name}")
-                
-                # КРИТИЧНО: Если указаны инструменты, нужно обновить ассистента
-                # Yandex Cloud Assistant не поддерживает обновление инструментов через update(),
-                # поэтому нужно пересоздать ассистента с новыми инструментами
-                if tools is not None and len(tools) > 0:
-                    logger.info(f"Обнаружены инструменты для ассистента '{name}'. Пересоздаём ассистента с инструментами.")
-                    # Удаляем старый ассистент из Yandex Cloud
-                    try:
-                        existing.delete()
-                        logger.info(f"Старый ассистент '{name}' удалён из Yandex Cloud")
-                    except Exception as e:
-                        logger.warning(f"Не удалось удалить старый ассистент из Yandex Cloud: {e}")
-                    
-                    # Удаляем старый ассистент из YDB
-                    try:
-                        ydb_client = get_ydb_client()
-                        ydb_client.delete_assistant_id(name)
-                        logger.info(f"Старый ID ассистента '{name}' удалён из YDB")
-                    except Exception as e:
-                        logger.warning(f"Не удалось удалить старый ID из YDB: {e}")
-                    
-                    # Создаём нового с инструментами
-                    return self.create_assistant(instruction=instruction, tools=tools, name=name)
-                
-                # Обновляем инструкцию если она изменилась
-                if instruction:
-                    try:
-                        existing.update(instruction=instruction)
-                        logger.info(f"Инструкция ассистента '{name}' обновлена")
-                    except Exception as e:
-                        logger.warning(f"Не удалось обновить инструкцию: {e}")
+                logger.info(f"Используем существующего ассистента: {name}")
                 return existing
         
-        # Если не нашли или имя не указано - создаём нового
-        return self.create_assistant(instruction=instruction, tools=tools, name=name)
+        # Если не нашли или имя не указано - создаём нового без сохранения в YDB (для Playground)
+        return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=True)
     
     def create_assistant(self, instruction: str, tools: list = None, name: str = None, skip_ydb_save: bool = False):
         """Создание Assistant с инструкцией и инструментами
@@ -155,6 +112,7 @@ class LangGraphService:
                 self.model,
                 ttl_days=30,
                 expiration_policy="since_last_active",
+                temperature=0.1,
                 **kwargs
             )
             logger.info(f"✅ Assistant создан в Yandex Cloud: ID={assistant.id}")
