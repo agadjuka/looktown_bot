@@ -136,4 +136,3 @@ class RescheduleBooking(BaseModel):
             f"Бронирование {self.booking_id} успешно перенесено на {self.new_date} {self.new_time}"
         )
 
-

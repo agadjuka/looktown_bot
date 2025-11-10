@@ -1,15 +1,19 @@
 """
 Определение стадий диалога
+Соответствует стадиям из dialogue_patterns.json
 """
 from enum import Enum
 
 
 class DialogueStage(str, Enum):
     """Стадии диалога"""
-    GREETING = "greeting"              # Приветствие
-    BOOKING = "booking"                # Бронирование
-    CANCEL_BOOKING = "cancel_booking"  # Отмена записи
-    RESCHEDULE = "reschedule"           # Перенос записи
-    SALON_INFO = "salon_info"          # О салоне
-    GENERAL = "general"                # Общий вопрос
-    UNKNOWN = "unknown"                # Неопределённая стадия
+    GREETING = "greeting"                      # Приветствие, начало диалога
+    INFORMATION_GATHERING = "information_gathering"  # Сбор информации об услугах, ценах, мастерах
+    BOOKING = "booking"                        # Бронирование услуги
+    BOOKING_TO_MASTER = "booking_to_master"   # Бронирование к конкретному мастеру
+    FIND_WINDOW = "find_window"               # Поиск свободного окна
+    CANCELLATION_REQUEST = "cancellation_request"  # Запрос на отмену записи
+    RESCHEDULE = "reschedule"                 # Перенос записи
+    VIEW_MY_BOOKING = "view_my_booking"        # Просмотр своих записей
+    CALL_MANAGER = "call_manager"              # Передача диалога менеджеру
+    FALLBACK = "fallback"                     # Вопросы не по теме салона
