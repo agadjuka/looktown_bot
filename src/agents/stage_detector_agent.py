@@ -2,6 +2,7 @@
 Агент для определения стадии диалога
 """
 import json
+import re
 from pydantic import BaseModel, Field
 from yandex_cloud_ml_sdk._threads.thread import Thread
 from .base_agent import BaseAgent
@@ -92,37 +93,60 @@ class StageDetectorAgent(BaseAgent):
     
     def _parse_response(self, response: str) -> StageDetection:
         """Парсинг ответа агента в StageDetection"""
-        # Убираем лишние пробелы и переносы строк
-        response = response.strip().lower()
+        if not response:
+            logger.warning("Пустой ответ от агента определения стадии")
+            return StageDetection(stage=DialogueStage.FALLBACK.value)
         
-        # Список всех возможных стадий, отсортированный по длине (от длинных к коротким)
-        # Это важно, чтобы "booking_to_master" проверялся раньше "booking"
-        valid_stages = sorted([stage.value for stage in DialogueStage], key=len, reverse=True)
+        # Убираем лишние пробелы и переносы строк, приводим к нижнему регистру
+        response_clean = response.strip().lower()
         
-        # Сначала проверяем точное совпадение
-        if response in valid_stages:
-            return StageDetection(stage=response)
+        # Получаем все возможные стадии
+        valid_stages = [stage.value for stage in DialogueStage]
         
-        # Если точного совпадения нет, ищем стадию в ответе
-        # Проверяем от длинных к коротким, чтобы избежать проблем с подстроками
-        for stage in valid_stages:
-            if stage in response:
+        # ШАГ 1: Проверяем точное совпадение (самый надежный способ)
+        if response_clean in valid_stages:
+            logger.debug(f"Найдено точное совпадение стадии: {response_clean}")
+            return StageDetection(stage=response_clean)
+        
+        # ШАГ 2: Извлекаем первое слово из ответа (агент должен вернуть только название стадии)
+        first_word = response_clean.split()[0] if response_clean.split() else ""
+        if first_word in valid_stages:
+            logger.debug(f"Найдена стадия в первом слове: {first_word}")
+            return StageDetection(stage=first_word)
+        
+        # ШАГ 3: Ищем стадию как целое слово через регулярные выражения
+        # Сортируем от длинных к коротким, чтобы "booking_to_master" проверялся раньше "booking"
+        sorted_stages = sorted(valid_stages, key=len, reverse=True)
+        for stage in sorted_stages:
+            # Ищем стадию как целое слово (с границами слов)
+            pattern = r'\b' + re.escape(stage) + r'\b'
+            if re.search(pattern, response_clean):
+                logger.debug(f"Найдена стадия через regex: {stage}")
                 return StageDetection(stage=stage)
         
-        # Если не нашли, пытаемся найти в JSON (на случай если агент всё же вернул JSON)
-        json_start = response.find('{')
-        json_end = response.rfind('}') + 1
+        # ШАГ 4: Пытаемся найти в JSON (на случай если агент вернул JSON)
+        json_start = response_clean.find('{')
+        json_end = response_clean.rfind('}') + 1
         
         if json_start >= 0 and json_end > json_start:
-            json_str = response[json_start:json_end]
+            json_str = response_clean[json_start:json_end]
             try:
                 data = json.loads(json_str)
-                stage = data.get('stage', '').lower()
+                stage = data.get('stage', '').lower().strip()
                 if stage in valid_stages:
+                    logger.debug(f"Найдена стадия в JSON: {stage}")
                     return StageDetection(stage=stage)
             except json.JSONDecodeError:
                 pass
         
-        # Fallback: если не удалось определить стадию, возвращаем fallback
-        logger.warning(f"Не удалось определить стадию из ответа: {response}")
+        # ШАГ 5: Последняя попытка - ищем подстроку (но только если ничего не нашли)
+        # Сортируем от длинных к коротким
+        for stage in sorted_stages:
+            if stage in response_clean:
+                logger.warning(f"Найдена стадия как подстрока (может быть неточно): {stage} в ответе: {response_clean}")
+                return StageDetection(stage=stage)
+        
+        # Fallback: если не удалось определить стадию
+        logger.warning(f"Не удалось определить стадию из ответа: {response_clean}")
+        logger.warning(f"Доступные стадии: {valid_stages}")
         return StageDetection(stage=DialogueStage.FALLBACK.value)

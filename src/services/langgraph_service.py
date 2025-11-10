@@ -113,6 +113,7 @@ class LangGraphService:
                 ttl_days=30,
                 expiration_policy="since_last_active",
                 temperature=0.1,
+                max_tokens=6000,
                 **kwargs
             )
             logger.info(f"✅ Assistant создан в Yandex Cloud: ID={assistant.id}")

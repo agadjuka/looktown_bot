@@ -122,8 +122,64 @@ class BaseAgent:
             
             # Проверяем tool_calls безопасно
             res_tool_calls = getattr(res, 'tool_calls', None)
-            if res_tool_calls:
-                logger.debug(f"  - res.tool_calls: {res_tool_calls}")
+            logger.debug(f"  - res.tool_calls: {res_tool_calls}")
+            logger.debug(f"  - res.tool_calls is None: {res_tool_calls is None}")
+            logger.debug(f"  - res.tool_calls is empty: {res_tool_calls == [] if res_tool_calls is not None else 'N/A'}")
+            
+            # Проверяем, не является ли res.text JSON-описанием инструмента
+            # Если да, то это промежуточная стадия и нужно продолжить обработку
+            if res_tool_calls is None or (isinstance(res_tool_calls, list) and len(res_tool_calls) == 0):
+                try:
+                    res_text_check = res.text
+                    if res_text_check:
+                        # Проверяем, не является ли это JSON с описанием инструмента
+                        try:
+                            parsed_json = json.loads(res_text_check)
+                            if isinstance(parsed_json, dict) and 'tool' in parsed_json:
+                                tool_name = parsed_json.get('tool')
+                                tool_args = parsed_json.get('arguments', {})
+                                
+                                logger.warning(f"Обнаружен JSON с инструментом в res.text, но res.tool_calls пустой.")
+                                logger.warning(f"Инструмент: {tool_name}, аргументы: {tool_args}")
+                                
+                                # Если инструмент есть в списке доступных, вызываем его вручную
+                                if tool_name in self.tools:
+                                    logger.info(f"Вызываем инструмент {tool_name} вручную из JSON")
+                                    fn = self.tools[tool_name]
+                                    try:
+                                        obj = fn(**tool_args)
+                                        tool_result = obj.process(thread) if hasattr(obj, 'process') else str(obj)
+                                        
+                                        # Сохраняем информацию о вызове
+                                        self._last_tool_calls.append({
+                                            "name": tool_name,
+                                            "args": tool_args,
+                                            "result": tool_result
+                                        })
+                                        
+                                        # Отправляем результат обратно в run
+                                        run.submit_tool_results([{"name": tool_name, "content": tool_result}])
+                                        
+                                        # Получаем следующий ответ от агента
+                                        res = run.wait()
+                                        res_tool_calls = getattr(res, 'tool_calls', None)
+                                        logger.debug(f"После вызова инструмента res.tool_calls: {res_tool_calls}")
+                                    except Exception as e:
+                                        logger.error(f"Ошибка при вызове инструмента {tool_name}: {e}")
+                                        # Продолжаем обработку, возможно агент сам обработает ошибку
+                                else:
+                                    logger.error(f"Инструмент {tool_name} не найден в списке доступных инструментов")
+                                    # Не возвращаем этот JSON, продолжаем обработку
+                                    # Попробуем получить tool_calls из других источников или продолжить run
+                                    logger.debug("Попытка продолжить run для получения финального ответа...")
+                                    res = run.wait()
+                                    res_tool_calls = getattr(res, 'tool_calls', None)
+                                    logger.debug(f"После повторного wait() res.tool_calls: {res_tool_calls}")
+                        except (json.JSONDecodeError, ValueError):
+                            # Это не JSON, продолжаем нормальную обработку
+                            pass
+                except Exception as e:
+                    logger.debug(f"Ошибка при проверке res.text на JSON: {e}")
             
             # Цикл обработки Function Calls - может быть несколько раундов вызовов инструментов
             max_iterations = 10  # Защита от бесконечного цикла
