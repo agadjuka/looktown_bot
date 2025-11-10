@@ -169,10 +169,16 @@ class StageDetectorAgent(BaseAgent):
         # Убираем лишние пробелы и переносы строк
         response = response.strip().lower()
         
-        # Список всех возможных стадий
-        valid_stages = [stage.value for stage in DialogueStage]
+        # Список всех возможных стадий, отсортированный по длине (от длинных к коротким)
+        # Это важно, чтобы "booking_to_master" проверялся раньше "booking"
+        valid_stages = sorted([stage.value for stage in DialogueStage], key=len, reverse=True)
         
-        # Ищем стадию в ответе
+        # Сначала проверяем точное совпадение
+        if response in valid_stages:
+            return StageDetection(stage=response)
+        
+        # Если точного совпадения нет, ищем стадию в ответе
+        # Проверяем от длинных к коротким, чтобы избежать проблем с подстроками
         for stage in valid_stages:
             if stage in response:
                 return StageDetection(stage=stage)
