@@ -3,7 +3,7 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
-from .tools.service_tools import GetCategories, GetServices, BookTimes
+from .tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking
 
 
 class BookingToMasterAgent(BaseAgent):
@@ -25,7 +25,7 @@ class BookingToMasterAgent(BaseAgent):
 Шаг 1: Уточнение услуги
 Если клиент уже указал категорию ("маникюр", "стрижка"), переходи к Шагу 2. Если непонятно, на какую категорию он хочет записаться ("написал просто хочу записаться" не сказав на что), задай открытый вопрос: "Отлично! На какую услугу хотели бы записаться к [Имя мастера  в правильном склонении]?"
 
-ВАЖНО: У тебя есть доступ к инструментам GetCategories, GetServices и BookTimes. ОБЯЗАТЕЛЬНО используй их для получения актуальной информации!
+ВАЖНО: У тебя есть доступ к инструментам GetCategories, GetServices, BookTimes и CreateBooking. ОБЯЗАТЕЛЬНО используй их для получения актуальной информации!
 
 Шаг 2: Выбор конкретной услуги
 ОБЯЗАТЕЛЬНО используй инструмент GetServices с указанием category_id, чтобы получить список услуг для выбранной категории. Покажи клиенту весь список услуг в этой категории (ВЕСЬ СПИСОК ЗНАЧИТ ВСЕ ПОЗИЦИИ, И МАСТЕР И ТОП МАСТЕР ЕСЛИ ТАКОЕ ЕСТЬ).
@@ -70,7 +70,7 @@ class BookingToMasterAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, BookTimes],
+            tools=[GetCategories, GetServices, BookTimes, CreateBooking],
             agent_name="Агент бронирования к мастеру"
         )
 

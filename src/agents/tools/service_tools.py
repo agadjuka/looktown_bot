@@ -210,3 +210,73 @@ class BookTimes(BaseModel):
             logger.error(f"Ошибка при поиске слотов: {e}", exc_info=True)
             return f"Ошибка при поиске доступных слотов: {str(e)}"
 
+
+class CreateBooking(BaseModel):
+    """
+    Создать запись на услугу.
+    Используй когда клиент выбрал услугу, дату, время и предоставил свои данные (имя и телефон).
+    service_id получай из GetServices (каждая услуга имеет ID: число).
+    datetime в формате YYYY-MM-DD HH:MM (например "2025-11-12 14:30").
+    """
+    
+    service_id: int = Field(
+        description="ID услуги (число). Получи из GetServices - каждая услуга имеет формат 'Название (ID: число)'."
+    )
+    
+    client_name: str = Field(
+        description="Имя клиента"
+    )
+    
+    client_phone: str = Field(
+        description="Телефон клиента в любом формате (будет автоматически нормализован)"
+    )
+    
+    datetime: str = Field(
+        description="Дата и время записи в формате YYYY-MM-DD HH:MM (например '2025-11-12 14:30') или YYYY-MM-DDTHH:MM"
+    )
+    
+    master_name: Optional[str] = Field(
+        default=None,
+        description="Имя мастера (опционально). Если указано - запись только к этому мастеру. НЕ УКАЗЫВАЙ если клиент не просил конкретного мастера."
+    )
+    
+    def process(self, thread: Thread) -> str:
+        """
+        Создание записи на услугу
+        
+        Returns:
+            Сообщение о результате создания записи
+        """
+        try:
+            import asyncio
+            from .yclients_service import YclientsService
+            from .create_booking_logic import create_booking_logic
+            
+            # Создаем сервис (он сам возьмет переменные окружения)
+            try:
+                yclients_service = YclientsService()
+            except ValueError as e:
+                return f"Ошибка конфигурации: {str(e)}. Проверьте переменные окружения AUTH_HEADER/AuthenticationToken и COMPANY_ID/CompanyID."
+            
+            # Запускаем async функцию синхронно
+            result = asyncio.run(
+                create_booking_logic(
+                    yclients_service=yclients_service,
+                    service_id=self.service_id,
+                    client_name=self.client_name,
+                    client_phone=self.client_phone,
+                    datetime=self.datetime,
+                    master_name=self.master_name
+                )
+            )
+            
+            # Возвращаем сообщение из результата
+            return result.get('message', 'Неизвестная ошибка')
+            
+        except ValueError as e:
+            logger.error(f"Ошибка конфигурации CreateBooking: {e}")
+            return f"Ошибка конфигурации: {str(e)}"
+        except Exception as e:
+            logger.error(f"Ошибка при создании записи: {e}", exc_info=True)
+            return f"Ошибка при создании записи: {str(e)}"
+

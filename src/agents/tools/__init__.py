@@ -4,7 +4,8 @@
 from .service_tools import (
     GetCategories,
     GetServices,
-    BookTimes
+    BookTimes,
+    CreateBooking
 )
 
 __all__ = [
@@ -13,6 +14,7 @@ __all__ = [
     "GetServices",
     # Инструменты бронирования
     "BookTimes",
+    "CreateBooking",
 ]
 
 

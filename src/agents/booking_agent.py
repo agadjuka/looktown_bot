@@ -3,7 +3,7 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
-from .tools.service_tools import GetCategories, GetServices, BookTimes
+from .tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking
 
 
 class BookingAgent(BaseAgent):
@@ -22,7 +22,7 @@ class BookingAgent(BaseAgent):
 Общайся как человек. Твоя цель — провести клиента по всему пути записи, от выбора услуги до финального подтверждения, делая процесс максимально естественным и удобным. Двигайся строго по шагам. Если ты сейчас на каком-то шаге, то не смотри на последующие шаги, они тебя на данный момент не касаются.
 Если тебе задают вопрос, на который ты не знаешь ответ, ничего не придумывай, просто зови менеджера.
 
-ВАЖНО: У тебя есть доступ к инструментам GetCategories, GetServices и BookTimes. ОБЯЗАТЕЛЬНО используй их для получения актуальной информации! Не давай ответ пока не получишь ответ от инструментов.
+ВАЖНО: У тебя есть доступ к инструментам GetCategories, GetServices, BookTimes и CreateBooking. ОБЯЗАТЕЛЬНО используй их для получения актуальной информации! Не давай ответ пока не получишь ответ от инструментов.
 
 Шаг 1: Уточнение услуги
 Сценарий А (Клиент назвал категорию): Если клиент уже написал, на что хочет записаться («маникюр», «массаж»), ОБЯЗАТЕЛЬНО сначала вызови инструмент GetCategories, чтобы получить список всех категорий с их ID, затем найди нужную категорию и запомни её ID. Переходи к Шагу 2. Не давай ответ пока не получишь ответ от инструментов.
@@ -75,6 +75,6 @@ class BookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, BookTimes],
+            tools=[GetCategories, GetServices, BookTimes, CreateBooking],
             agent_name="Агент бронирования"
         )

@@ -297,12 +297,13 @@ elif st.session_state.get('current_view') == 'create' or st.session_state.get('s
                         if selected_tools:
                             logger.info(f"Обработка инструментов: {selected_tools}")
                             from src.agents.tools.service_tools import (
-                                GetCategories, GetServices, BookTimes
+                                GetCategories, GetServices, BookTimes, CreateBooking
                             )
                             tool_mapping = {
                                 'GetCategories': GetCategories,
                                 'GetServices': GetServices,
-                                'BookTimes': BookTimes
+                                'BookTimes': BookTimes,
+                                'CreateBooking': CreateBooking
                             }
                             tools_classes = [tool_mapping[t] for t in selected_tools if t in tool_mapping]
                             logger.info(f"Классы инструментов: {[t.__name__ for t in tools_classes]}")

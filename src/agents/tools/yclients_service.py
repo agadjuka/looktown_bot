@@ -21,6 +21,7 @@ class ServiceDetails(BaseModel):
     title: str = Field(default="")
     name: str = Field(default="")
     staff: List[Master] = Field(default_factory=list)
+    duration: int = Field(default=0, description="Продолжительность услуги в секундах")
     
     def get_title(self) -> str:
         """Возвращает title или name в зависимости от того, что заполнено"""
@@ -128,4 +129,64 @@ class YclientsService:
                     book_data = response_data if isinstance(response_data, list) else []
                 
                 return BookTimeResponse(data=book_data if isinstance(book_data, list) else [])
+    
+    async def create_booking(
+        self,
+        staff_id: int,
+        service_id: int,
+        client_name: str,
+        client_phone: str,
+        datetime: str,
+        seance_length: int
+    ) -> Dict[str, Any]:
+        """
+        Создать запись на услугу
+        
+        Args:
+            staff_id: ID мастера
+            service_id: ID услуги
+            client_name: Имя клиента
+            client_phone: Телефон клиента
+            datetime: Дата и время записи
+            seance_length: Продолжительность сеанса в секундах
+            
+        Returns:
+            Dict: Ответ от API с информацией о созданной записи
+        """
+        url = f"{self.BASE_URL}/records/{self.company_id}"
+        headers = {
+            "Accept": "application/vnd.api.v2+json",
+            "Authorization": self.auth_header,
+            "Content-Type": "application/json"
+        }
+        
+        body = {
+            "staff_id": staff_id,
+            "services": [{"id": service_id}],
+            "client": {
+                "phone": client_phone,
+                "name": client_name
+            },
+            "datetime": datetime,
+            "seance_length": seance_length,
+            "save_if_busy": False,
+            "comment": "ИИ Администратор"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=body) as response:
+                response_text = await response.text()
+                
+                if response.ok:
+                    try:
+                        data = json.loads(response_text)
+                    except json.JSONDecodeError:
+                        data = response_text
+                    return {"success": True, "data": data}
+                else:
+                    return {
+                        "success": False,
+                        "error": response_text[:1000],
+                        "status_code": response.status
+                    }
 

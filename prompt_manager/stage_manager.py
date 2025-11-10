@@ -77,6 +77,8 @@ class StageManager:
                 tools.append('GetServices')
             if 'BookTimes' in content:
                 tools.append('BookTimes')
+            if 'CreateBooking' in content:
+                tools.append('CreateBooking')
             
             # Определяем стадию из имени файла (ключ стадии)
             stage = self._extract_stage_from_file(file_path)
@@ -203,6 +205,9 @@ class StageManager:
         if 'BookTimes' in tools:
             tools_imports.append('BookTimes')
             tools_list.append('BookTimes')
+        if 'CreateBooking' in tools:
+            tools_imports.append('CreateBooking')
+            tools_list.append('CreateBooking')
         
         imports = ""
         tools_param = "None"
@@ -611,7 +616,8 @@ class {class_name}(BaseAgent):
         return [
             'GetCategories',
             'GetServices',
-            'BookTimes'
+            'BookTimes',
+            'CreateBooking'
         ]
     
     def get_stage_detector_instruction(self) -> str:
