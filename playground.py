@@ -1,12 +1,23 @@
 """
 Streamlit Playground для тестирования LangGraph агентов
 """
-import streamlit as st
+import sys
 import os
+
+# Проверяем, что скрипт запущен через Streamlit
+# Если запущен напрямую через Python, показываем ошибку
+if __name__ == "__main__" and "streamlit" not in sys.modules:
+    print("❌ Ошибка: Этот скрипт должен запускаться через Streamlit!")
+    print("\n📝 Правильный способ запуска:")
+    print("   python run_playground.py")
+    print("\n   или")
+    print("\n   streamlit run playground.py")
+    sys.exit(1)
+
+import streamlit as st
 from dotenv import load_dotenv
 import json
 from datetime import datetime
-import sys
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -115,8 +126,6 @@ with st.sidebar:
             with st.expander(f"Шаг {len(st.session_state.graph_states) - i}", expanded=False):
                 if state.get('stage'):
                     st.info(f"**Стадия:** `{state['stage']}`")
-                if state.get('extracted_info'):
-                    st.json(state.get('extracted_info'))
                 st.text(f"**Время:** {state.get('timestamp', 'N/A')}")
     else:
         st.text("Пока нет состояний")
@@ -161,10 +170,8 @@ with chat_container:
                 elif "used_tools" in message["metadata"]:
                     st.caption("🔧 **Инструменты:** нет")
                 
-                # Дополнительные детали в expandable секции
-                if "extracted_info" in message["metadata"] and message["metadata"]["extracted_info"]:
-                    with st.expander("🔍 Детали", expanded=False):
-                        st.json(message["metadata"]["extracted_info"])
+                # Дополнительные детали в expandable секции (если есть другая информация)
+                # extracted_info больше не используется после упрощения
 
 # Поле ввода
 user_input = st.chat_input("Введите сообщение...")
@@ -190,7 +197,7 @@ if user_input:
                     "message": user_input,
                     "thread": st.session_state.thread,
                     "stage": None,
-                    "extracted_info": None,
+                    "extracted_info": None,  # Больше не используется, но оставлено для совместимости
                     "answer": "",
                     "manager_alert": None,
                     "agent_name": None,
@@ -217,7 +224,6 @@ if user_input:
                 # Сохраняем состояние графа
                 graph_state_copy = {
                     "stage": detected_stage,
-                    "extracted_info": result_state.get("extracted_info"),
                     "timestamp": datetime.now().isoformat()
                 }
                 st.session_state.graph_states.append(graph_state_copy)
@@ -242,8 +248,6 @@ if user_input:
                 
                 # Показываем метаданные в expandable секции
                 with st.expander("🔍 Детали ответа", expanded=False):
-                    if result_state.get("extracted_info"):
-                        st.json(result_state["extracted_info"])
                     if used_tools:
                         st.info(f"**Использованные инструменты:** {', '.join(used_tools)}")
                     if result_state.get("manager_alert"):
@@ -256,7 +260,6 @@ if user_input:
                     "timestamp": datetime.now().isoformat(),
                     "metadata": {
                         "stage": detected_stage,
-                        "extracted_info": result_state.get("extracted_info"),
                         "agent_name": agent_name,
                         "used_tools": used_tools
                     }

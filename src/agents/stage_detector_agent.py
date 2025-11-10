@@ -2,7 +2,6 @@
 Агент для определения стадии диалога
 """
 import json
-from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 from yandex_cloud_ml_sdk._threads.thread import Thread
 from .base_agent import BaseAgent
@@ -14,153 +13,38 @@ from ..services.logger_service import logger
 class StageDetection(BaseModel):
     """Структура для определения стадии"""
     stage: str = Field(
-        description="Стадия диалога: greeting, booking, cancel_booking, reschedule, general, unknown"
-    )
-    confidence: float = Field(
-        description="Уверенность в определении стадии (0.0-1.0)",
-        default=0.5,
-        ge=0.0,
-        le=1.0
-    )
-    extracted_info: Optional[Dict[str, Any]] = Field(
-        description="Извлечённая информация из запроса (даты, время, услуги, телефоны, booking_id)",
-        default=None
+        description="Стадия диалога: greeting, booking, cancel_booking, reschedule, salon_info, general, unknown"
     )
 
 
 class StageDetectorAgent(BaseAgent):
     """Агент для определения стадии диалога"""
     
+    # Словарь описаний стадий (можно обновлять через Prompt Manager)
+    _stage_descriptions = {
+        "greeting": "Приветствие, начало диалога, прощание",
+        "booking": "Бронирование, запись на услугу",
+        "cancel_booking": "Отмена записи",
+        "reschedule": "Перенос записи на другое время",
+        "salon_info": "Вопросы о салоне, рассказ о салоне",
+        "general": "Общие вопросы о услугах, ценах, мастерах",
+        "unknown": "Неопределённая стадия, если не подходит ни одна"
+    }
+    
     def __init__(self, langgraph_service: LangGraphService):
-        instruction = """Ты - агент классификации запросов в салоне красоты LOOKTOWN. Твоя задача - точно определить стадию диалога на основе запроса пользователя и истории переписки.
+        # Получаем список стадий из enum
+        stages_list = []
+        for stage in DialogueStage:
+            stages_list.append(f"- {stage.value} - {self._get_stage_description(stage.value)}")
+        
+        stages_text = "\n".join(stages_list)
+        
+        instruction = f"""Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
 
-## Доступные стадии диалога:
+Доступные стадии:
+{stages_text}
 
-### 1. greeting (приветствие)
-Используй эту стадию, когда:
-- Пользователь только начинает диалог ("Привет", "Здравствуйте", "Добрый день")
-- Пользователь просит помощи без конкретной задачи ("Помогите", "Что вы можете предложить?")
-- Пользователь задаёт общие вопросы о салоне ("Расскажите о салоне", "Какие услуги у вас есть?")
-- Пользователь благодарит или прощается ("Спасибо", "До свидания")
-
-### 2. booking (бронирование)
-Используй эту стадию, когда:
-- Пользователь хочет записаться на услугу ("Хочу записаться", "Можно забронировать", "Нужна запись")
-- Пользователь спрашивает о свободном времени ("Когда у вас свободно?", "Какие есть слоты?")
-- Пользователь указывает желаемую дату/время для записи ("Хочу на завтра в 15:00", "Можно на пятницу?")
-- Пользователь выбирает услугу и хочет записаться ("Хочу стрижку, когда можно?")
-
-### 3. cancel_booking (отмена записи)
-Используй эту стадию, когда:
-- Пользователь хочет отменить запись ("Отменить запись", "Хочу отменить бронирование")
-- Пользователь говорит, что не сможет прийти ("Не смогу прийти", "Нужно отменить")
-- Пользователь просит удалить запись ("Удалите мою запись", "Отмените, пожалуйста")
-
-### 4. reschedule (перенос записи)
-Используй эту стадию, когда:
-- Пользователь хочет перенести запись на другое время ("Перенести запись", "Можно на другое время?")
-- Пользователь просит изменить дату/время ("Хочу перенести на завтра", "Можно другое время?")
-- Пользователь говорит, что не может в назначенное время ("Не могу в это время", "Нужно перенести")
-
-### 5. general (общий вопрос)
-Используй эту стадию, когда:
-- Пользователь задаёт вопросы о услугах, ценах, мастерах ("Сколько стоит стрижка?", "Кто делает маникюр?")
-- Пользователь спрашивает информацию о салоне ("Где вы находитесь?", "Какие у вас часы работы?")
-- Пользователь интересуется процедурами ("Что входит в услугу?", "Как долго длится процедура?")
-
-### 6. unknown (неопределённая стадия)
-Используй эту стадию только если:
-- Не удалось однозначно определить стадию
-- Запрос слишком неясный или неполный
-- Запрос не относится ни к одной из категорий выше
-
-
-
-
-
-
-
-
-
-
-
-### 7. salon_info (О салоне)
-Используй эту стадию, когда:
-Когда клиент просит рассказать о салоне.
-
-## Правила определения стадии:
-
-1. **Анализируй контекст диалога**: Учитывай предыдущие сообщения в Thread. Если пользователь уже обсуждал бронирование, то "перенести на завтра" - это reschedule, а не booking.
-
-2. **Приоритет конкретности**: Если запрос содержит конкретные действия (записаться, отменить, перенести), выбирай соответствующую стадию, даже если есть общие вопросы.
-
-3. **Извлекай информацию**: Если пользователь упоминает даты, время, услуги, телефоны - сохраняй их в extracted_info для использования другими агентами.
-
-4. **Уверенность**: Указывай confidence от 0.0 до 1.0:
-   - 0.9-1.0: Очень уверен (четкие формулировки типа "хочу записаться")
-   - 0.7-0.9: Уверен (понятный запрос с контекстом)
-   - 0.5-0.7: Средняя уверенность (неоднозначный запрос)
-   - 0.0-0.5: Низкая уверенность (неясный запрос → unknown)
-
-## Формат ответа:
-
-Ты должен вернуть ТОЛЬКО валидный JSON с полями:
-- stage: одна из стадий (greeting, booking, cancel_booking, reschedule, general, unknown)
-- confidence: число от 0.0 до 1.0
-- extracted_info: объект с извлечённой информацией:
-  - date: дата (если упомянута)
-  - time: время (если упомянуто)
-  - service: тип услуги (если упомянут)
-  - phone: телефон (если упомянут)
-  - booking_id: ID бронирования (если упомянут)
-
-## Примеры:
-
-Запрос: "Привет! Хочу записаться на стрижку на завтра в 15:00"
-Ответ:
-{
-  "stage": "booking",
-  "confidence": 0.95,
-  "extracted_info": {
-    "date": "завтра",
-    "time": "15:00",
-    "service": "стрижка"
-  }
-}
-
-Запрос: "Не смогу прийти в назначенное время, можно перенести?"
-Ответ:
-{
-  "stage": "reschedule",
-  "confidence": 0.9,
-  "extracted_info": {}
-}
-
-Запрос: "Сколько стоит маникюр?"
-Ответ:
-{
-  "stage": "general",
-  "confidence": 0.95,
-  "extracted_info": {
-    "service": "маникюр"
-  }
-}
-
-Запрос: "Здравствуйте!"
-Ответ:
-{
-  "stage": "greeting",
-  "confidence": 1.0,
-  "extracted_info": {}
-}
-
-## Важно:
-
-- Будь точным в определении стадии - от этого зависит дальнейшая маршрутизация
-- Если сомневаешься между двумя стадиями, выбирай более конкретную
-- Всегда анализируй полный контекст диалога, а не только последнее сообщение
-- Извлекай максимум информации для помощи другим агентам
-- ВСЕГДА возвращай ТОЛЬКО валидный JSON, без дополнительного текста до или после"""
+Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
         
         super().__init__(
             langgraph_service=langgraph_service,
@@ -169,13 +53,23 @@ class StageDetectorAgent(BaseAgent):
             agent_name="Определитель стадий диалога"
         )
     
+    @classmethod
+    def _get_stage_description(cls, stage_value: str) -> str:
+        """Получить описание стадии для промпта"""
+        return cls._stage_descriptions.get(stage_value, "")
+    
+    @classmethod
+    def update_stage_description(cls, stage_value: str, description: str):
+        """Обновить описание стадии"""
+        cls._stage_descriptions[stage_value] = description
+    
     def detect_stage(self, message: str, thread: Thread) -> StageDetection:
         """Определение стадии диалога"""
         try:
             # Вызываем базовый метод агента
             response = self(message, thread)
             
-            # Пытаемся распарсить JSON из ответа
+            # Парсим ответ
             detection = self._parse_response(response)
             
             # Валидируем стадию
@@ -187,19 +81,22 @@ class StageDetectorAgent(BaseAgent):
             
         except Exception as e:
             logger.error(f"Ошибка при определении стадии: {e}")
-            return StageDetection(
-                stage=DialogueStage.UNKNOWN.value,
-                confidence=0.0,
-                extracted_info={}
-            )
+            return StageDetection(stage=DialogueStage.UNKNOWN.value)
     
     def _parse_response(self, response: str) -> StageDetection:
         """Парсинг ответа агента в StageDetection"""
         # Убираем лишние пробелы и переносы строк
-        response = response.strip()
+        response = response.strip().lower()
         
-        # Пытаемся найти JSON в ответе
-        # Ищем первую открывающую скобку и последнюю закрывающую
+        # Список всех возможных стадий
+        valid_stages = [stage.value for stage in DialogueStage]
+        
+        # Ищем стадию в ответе
+        for stage in valid_stages:
+            if stage in response:
+                return StageDetection(stage=stage)
+        
+        # Если не нашли, пытаемся найти в JSON (на случай если агент всё же вернул JSON)
         json_start = response.find('{')
         json_end = response.rfind('}') + 1
         
@@ -207,15 +104,12 @@ class StageDetectorAgent(BaseAgent):
             json_str = response[json_start:json_end]
             try:
                 data = json.loads(json_str)
-                return StageDetection(**data)
-            except json.JSONDecodeError as e:
-                logger.warning(f"Не удалось распарсить JSON: {e}, ответ: {json_str}")
+                stage = data.get('stage', '').lower()
+                if stage in valid_stages:
+                    return StageDetection(stage=stage)
+            except json.JSONDecodeError:
+                pass
         
-        # Fallback: если не удалось распарсить JSON, возвращаем unknown
-        logger.warning(f"Не найден JSON в ответе агента: {response}")
-        return StageDetection(
-            stage=DialogueStage.UNKNOWN.value,
-            confidence=0.0,
-            extracted_info={}
-        )
-
+        # Fallback: если не удалось определить стадию, возвращаем unknown
+        logger.warning(f"Не удалось определить стадию из ответа: {response}")
+        return StageDetection(stage=DialogueStage.UNKNOWN.value)

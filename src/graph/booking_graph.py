@@ -97,8 +97,7 @@ class BookingGraph:
         stage_detection = self.stage_detector.detect_stage(message, thread)
         
         return {
-            "stage": stage_detection.stage,
-            "extracted_info": stage_detection.extracted_info or {}
+            "stage": stage_detection.stage
         }
     
     def _route_by_stage(self, state: BookingState) -> Literal["greeting", "booking", "cancel_booking", "reschedule", "salon_info", "general", "unknown"]:

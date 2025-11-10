@@ -108,47 +108,29 @@ if st.session_state.get('current_view') == 'detector':
     st.header("🎯 Определитель стадий")
     st.markdown("**Агент StageDetectorAgent** - определяет стадию диалога")
     
+    st.info("ℹ️ В упрощённом формате промпт генерируется автоматически из списка стадий. Редактирование промпта недоступно.")
+    
     current_detector_instruction = st.session_state.stage_manager.get_stage_detector_instruction()
     
-    detector_instruction = st.text_area(
-        "Промпт:",
-        value=current_detector_instruction,
-        height=600,
-        key="detector_instruction_editor"
-    )
+    st.markdown("**Текущий промпт (только для просмотра):**")
+    if current_detector_instruction:
+        st.code(current_detector_instruction, language=None)
+    else:
+        st.error("❌ Не удалось загрузить промпт. Проверьте логи.")
+        st.code("""Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
+
+Доступные стадии:
+- greeting - Приветствие, начало диалога, прощание
+- booking - Бронирование, запись на услугу
+- cancel_booking - Отмена записи
+- reschedule - Перенос записи на другое время
+- salon_info - Вопросы о салоне, рассказ о салоне
+- general - Общие вопросы о услугах, ценах, мастерах
+- unknown - Неопределённая стадия, если не подходит ни одна
+
+Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии.""", language=None)
     
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        if st.button("💾 Сохранить", type="primary", use_container_width=True):
-            if detector_instruction != current_detector_instruction:
-                result = st.session_state.stage_manager.save_stage_detector_instruction(detector_instruction)
-                if result:
-                    st.success("Промпт сохранён!")
-                    
-                    # Обновляем в Yandex Cloud
-                    if st.session_state.langgraph_service:
-                        try:
-                            assistants = list(st.session_state.langgraph_service.assistants.list())
-                            for assistant in assistants:
-                                try:
-                                    if hasattr(assistant, 'name') and assistant.name == "Определитель стадий диалога":
-                                        assistant.update(instruction=detector_instruction)
-                                        st.success("✅ Обновлён в Yandex Cloud!")
-                                        break
-                                except Exception:
-                                    continue
-                        except Exception as e:
-                            st.warning(f"Не удалось обновить в Yandex Cloud: {e}")
-                    
-                    st.rerun()
-                else:
-                    st.error("Ошибка при сохранении")
-            else:
-                st.info("Промпт не изменён")
-    
-    with col2:
-        if st.button("🔄 Сбросить", use_container_width=True):
-            st.rerun()
+    st.markdown("**Примечание:** Для изменения описаний стадий используйте форму создания/редактирования стадии.")
 
 elif st.session_state.get('current_view') == 'create' or st.session_state.get('show_create_form'):
     # Создание новой стадии

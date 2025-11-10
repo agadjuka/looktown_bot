@@ -625,88 +625,99 @@ class {class_name}(BaseAgent):
         ]
     
     def get_stage_detector_instruction(self) -> str:
-        """Получить промпт StageDetectorAgent"""
-        if not self.stage_detector_file.exists():
-            return ""
-        
+        """Получить промпт StageDetectorAgent (упрощённый формат - генерируется автоматически)"""
         try:
-            with open(self.stage_detector_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+            from src.agents.dialogue_stages import DialogueStage
+            from src.agents.stage_detector_agent import StageDetectorAgent
             
-            instruction_match = re.search(r'instruction\s*=\s*"""(.*?)"""', content, re.DOTALL)
-            if instruction_match:
-                return instruction_match.group(1).strip()
-            return ""
+            # Генерируем промпт так же, как в StageDetectorAgent
+            stages_list = []
+            for stage in DialogueStage:
+                try:
+                    # Используем classmethod для получения описания
+                    desc = StageDetectorAgent._get_stage_description(stage.value)
+                    if not desc:
+                        # Если описание пустое, используем значение по умолчанию
+                        desc = f"Стадия {stage.value}"
+                    stages_list.append(f"- {stage.value} - {desc}")
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Ошибка при получении описания для стадии {stage.value}: {e}")
+                    stages_list.append(f"- {stage.value} - Стадия {stage.value}")
+            
+            stages_text = "\n".join(stages_list)
+            
+            instruction = f"""Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
+
+Доступные стадии:
+{stages_text}
+
+Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
+            
+            return instruction
         except Exception as e:
-            print(f"Ошибка при чтении StageDetectorAgent: {e}")
-            return ""
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при генерации промпта определителя: {e}", exc_info=True)
+            # Возвращаем базовый промпт даже при ошибке
+            return """Посмотри последнее сообщение и историю переписки. Определи стадию диалога.
+
+Доступные стадии:
+- greeting - Приветствие, начало диалога, прощание
+- booking - Бронирование, запись на услугу
+- cancel_booking - Отмена записи
+- reschedule - Перенос записи на другое время
+- salon_info - Вопросы о салоне, рассказ о салоне
+- general - Общие вопросы о услугах, ценах, мастерах
+- unknown - Неопределённая стадия, если не подходит ни одна
+
+Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
     
     def save_stage_detector_instruction(self, new_instruction: str) -> bool:
-        """Сохранить промпт StageDetectorAgent"""
-        if not self.stage_detector_file.exists():
-            return False
-        
-        try:
-            with open(self.stage_detector_file, 'r', encoding='utf-8') as f:
-                content = f.read()
-            
-            # Заменяем промпт
-            pattern = r'(instruction\s*=\s*""").*?(""")'
-            replacement = r'\1' + new_instruction + r'\2'
-            new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-            
-            with open(self.stage_detector_file, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-            
-            return True
-        except Exception as e:
-            print(f"Ошибка при сохранении StageDetectorAgent: {e}")
-            return False
+        """Сохранить промпт StageDetectorAgent (упрощённый формат - не используется)"""
+        # В упрощённом формате промпт генерируется автоматически из enum
+        # Редактирование промпта через интерфейс не поддерживается
+        # Можно только редактировать описания стадий через add_stage_to_detector
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning("Попытка сохранить промпт определителя - в упрощённом формате промпт генерируется автоматически")
+        return False
     
     def add_stage_to_detector(self, stage_key: str, stage_name: str, stage_description: str) -> bool:
-        """Добавить описание стадии в промпт StageDetectorAgent"""
-        if not self.stage_detector_file.exists():
-            return False
-        
+        """Добавить описание стадии в промпт StageDetectorAgent (упрощённый формат)"""
         try:
-            with open(self.stage_detector_file, 'r', encoding='utf-8') as f:
-                content = f.read()
+            # Обновляем описание стадии в StageDetectorAgent
+            from src.agents.stage_detector_agent import StageDetectorAgent
             
-            # Находим все стадии (### N. stage_name)
-            stage_matches = list(re.finditer(r'### \d+\.', content))
-            stage_count = len(stage_matches)
-            new_stage_number = stage_count + 1
+            # Формируем краткое описание из stage_description
+            # Если это многострочный текст, берём первую строку или первые 100 символов
+            if '\n' in stage_description:
+                short_description = stage_description.split('\n')[0].strip()
+            else:
+                short_description = stage_description.strip()
             
-            # Формируем текст новой стадии
-            # Ключ стадии идёт первым, потом инструкция
-            new_stage_text = f"""### {new_stage_number}. {stage_key} ({stage_name})
-Используй эту стадию, когда:
-{stage_description}
-
-"""
+            # Ограничиваем длину описания
+            if len(short_description) > 100:
+                short_description = short_description[:97] + "..."
             
-            # Ищем место перед "## Правила определения стадии"
-            pattern = r'(\n\n)(## Правила определения стадии:)'
-            replacement = r'\1' + new_stage_text + r'\2'
-            new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-            
-            if new_content == content:
-                # Если не нашлось, пробуем найти перед "## Правила"
-                pattern2 = r'(\n\n)(## Правила)'
-                replacement2 = r'\1' + new_stage_text + r'\2'
-                new_content = re.sub(pattern2, replacement2, content, flags=re.DOTALL)
-            
-            with open(self.stage_detector_file, 'w', encoding='utf-8') as f:
-                f.write(new_content)
+            # Обновляем описание в словаре
+            StageDetectorAgent.update_stage_description(stage_key, short_description)
             
             return True
         except Exception as e:
-            print(f"Ошибка при добавлении стадии в детектор: {e}")
-            import traceback
-            traceback.print_exc()
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при обновлении описания стадии: {e}")
             return False
     
     def remove_stage_from_detector(self, stage_key: str, stage_name: str) -> bool:
+        """Удалить стадию из промпта StageDetectorAgent (упрощённый формат)"""
+        # В упрощённом формате промпт генерируется автоматически из enum
+        # Стадия автоматически исчезнет из промпта при следующем запуске
+        return True
+    
+    def remove_stage_from_detector_old(self, stage_key: str, stage_name: str) -> bool:
         """Удалить описание стадии из промпта StageDetectorAgent"""
         if not self.stage_detector_file.exists():
             return False
