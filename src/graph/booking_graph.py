@@ -9,6 +9,10 @@ from ..agents.booking_agent import BookingAgent
 from ..agents.cancel_booking_agent import CancelBookingAgent
 from ..agents.reschedule_agent import RescheduleAgent
 from ..agents.greeting_agent import GreetingAgent
+from ..agents.salon_info_agent import SalonInfoAgent
+
+
+
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
 
@@ -32,8 +36,9 @@ class BookingGraph:
                 'booking_agent': BookingAgent(langgraph_service),
                 'cancel_agent': CancelBookingAgent(langgraph_service),
                 'reschedule_agent': RescheduleAgent(langgraph_service),
-                'greeting_agent': GreetingAgent(langgraph_service)
-            }
+                'greeting_agent': GreetingAgent(langgraph_service),
+                'salon_info_agent': SalonInfoAgent(langgraph_service),
+                }
         
         # Используем агентов из кэша
         agents = BookingGraph._agents_cache[cache_key]
@@ -42,7 +47,7 @@ class BookingGraph:
         self.cancel_agent = agents['cancel_agent']
         self.reschedule_agent = agents['reschedule_agent']
         self.greeting_agent = agents['greeting_agent']
-        
+        self.salon_info_agent = agents['salon_info_agent']
         # Создаём граф
         self.graph = self._create_graph()
         self.compiled_graph = self.graph.compile()
@@ -57,7 +62,7 @@ class BookingGraph:
         graph.add_node("handle_booking", self._handle_booking)
         graph.add_node("handle_cancel", self._handle_cancel)
         graph.add_node("handle_reschedule", self._handle_reschedule)
-        
+        graph.add_node("handle_salon_info", self._handle_salon_info)
         # Добавляем рёбра
         graph.add_edge(START, "detect_stage")
         graph.add_conditional_edges(
@@ -68,6 +73,7 @@ class BookingGraph:
                 "booking": "handle_booking",
                 "cancel_booking": "handle_cancel",
                 "reschedule": "handle_reschedule",
+                "salon_info": "handle_salon_info",
                 "general": "handle_greeting",  # Общие вопросы обрабатываем как приветствие
                 "unknown": "handle_greeting"    # Неопределённые тоже
             }
@@ -76,7 +82,7 @@ class BookingGraph:
         graph.add_edge("handle_booking", END)
         graph.add_edge("handle_cancel", END)
         graph.add_edge("handle_reschedule", END)
-        
+        graph.add_edge("handle_salon_info", END)
         return graph
     
     def _detect_stage(self, state: BookingState) -> BookingState:
@@ -95,10 +101,16 @@ class BookingGraph:
             "extracted_info": stage_detection.extracted_info or {}
         }
     
-    def _route_by_stage(self, state: BookingState) -> Literal["greeting", "booking", "cancel_booking", "reschedule", "general", "unknown"]:
+    def _route_by_stage(self, state: BookingState) -> Literal["greeting", "booking", "cancel_booking", "reschedule", "salon_info", "general", "unknown"]:
         """Маршрутизация по стадии"""
         stage = state.get("stage", "unknown")
         logger.info(f"Маршрутизация на стадию: {stage}")
+        
+        # Если стадия не известна, логируем предупреждение
+        if stage not in ["greeting", "booking", "cancel_booking", "reschedule", "salon_info", "general", "unknown"]:
+            logger.warning(f"⚠️ Неизвестная стадия: {stage}, устанавливаю unknown")
+            return "unknown"
+        
         return stage
     
     def _handle_greeting(self, state: BookingState) -> BookingState:
@@ -145,7 +157,19 @@ class BookingGraph:
         
         return {"answer": answer, "agent_name": "RescheduleAgent", "used_tools": used_tools}
     
+    def _handle_salon_info(self, state: BookingState) -> BookingState:
+        """Обработка стадии О салоне"""
+        logger.info("Обработка стадии salon_info")
+        message = state["message"]
+        thread = state["thread"]
+        
+        answer = self.salon_info_agent(message, thread)
+        used_tools = [tool["name"] for tool in self.salon_info_agent._last_tool_calls] if hasattr(self.salon_info_agent, '_last_tool_calls') and self.salon_info_agent._last_tool_calls else []
+        
+        return {"answer": answer, "agent_name": "SalonInfoAgent", "used_tools": used_tools}
+
     def invoke(self, state: BookingState) -> BookingState:
         """Выполнение графа"""
         return self.compiled_graph.invoke(state)
 
+        

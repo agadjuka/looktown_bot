@@ -153,16 +153,35 @@ class YDBClient:
     
     def save_assistant_id(self, assistant_name: str, assistant_id: str):
         """Сохранение маппинга assistant_name -> assistant_id"""
-        query = """
-        DECLARE $name AS String; 
-        DECLARE $id AS String;
-        UPSERT INTO assistants (assistant_name, assistant_id, updated_at)
-        VALUES ($name, $id, CurrentUtcTimestamp());
-        """
-        self._execute_query(query, {
-            "$name": assistant_name, 
-            "$id": assistant_id
-        })
+        from .services.logger_service import logger
+        logger.info(f"=== СОХРАНЕНИЕ ASSISTANT ID В YDB ===")
+        logger.info(f"assistant_name: {assistant_name}")
+        logger.info(f"assistant_id: {assistant_id}")
+        
+        try:
+            query = """
+            DECLARE $name AS String; 
+            DECLARE $id AS String;
+            UPSERT INTO assistants (assistant_name, assistant_id, updated_at)
+            VALUES ($name, $id, CurrentUtcTimestamp());
+            """
+            logger.info("Выполнение запроса UPSERT...")
+            self._execute_query(query, {
+                "$name": assistant_name, 
+                "$id": assistant_id
+            })
+            logger.info(f"✅ Запрос выполнен успешно")
+            
+            # Проверяем, что действительно сохранилось
+            logger.info("Проверка сохранения...")
+            saved_id = self.get_assistant_id(assistant_name)
+            if saved_id == assistant_id:
+                logger.info(f"✅ Проверка пройдена: ID корректно сохранён")
+            else:
+                logger.error(f"❌ Проверка не прошла! Ожидалось: {assistant_id}, получено: {saved_id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка сохранения assistant_id в YDB: {e}", exc_info=True)
+            raise
     
     def close(self):
         """Закрытие соединения с YDB"""

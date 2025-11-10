@@ -80,33 +80,62 @@ class LangGraphService:
     
     def create_assistant(self, instruction: str, tools: list = None, name: str = None):
         """Создание Assistant с инструкцией и инструментами"""
+        logger.info(f"=== СОЗДАНИЕ ASSISTANT ===")
+        logger.info(f"name: {name}")
+        logger.info(f"instruction длина: {len(instruction) if instruction else 0}")
+        logger.info(f"tools: {len(tools) if tools else 0}")
+        
         kwargs = {}
         if tools and len(tools) > 0:
             kwargs = {"tools": tools}
+            logger.info(f"Инструменты добавлены в kwargs")
         
         # Добавляем имя если указано
         if name:
             kwargs["name"] = name
+            logger.info(f"Имя добавлено в kwargs: {name}")
         
         logger.info(f"Создание нового ассистента: {name or 'Без имени'}")
-        assistant = self.sdk.assistants.create(
-            self.model,
-            ttl_days=30,
-            expiration_policy="since_last_active",
-            **kwargs
-        )
+        try:
+            assistant = self.sdk.assistants.create(
+                self.model,
+                ttl_days=30,
+                expiration_policy="since_last_active",
+                **kwargs
+            )
+            logger.info(f"✅ Assistant создан в Yandex Cloud: ID={assistant.id}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка создания Assistant в Yandex Cloud: {e}", exc_info=True)
+            raise
         
         if instruction:
-            assistant.update(instruction=instruction)
+            try:
+                logger.info("Обновление инструкции...")
+                assistant.update(instruction=instruction)
+                logger.info("✅ Инструкция обновлена")
+            except Exception as e:
+                logger.error(f"❌ Ошибка обновления инструкции: {e}", exc_info=True)
+                raise
         
         # Сохраняем ID в YDB для переиспользования
         if name and assistant.id:
             try:
+                logger.info(f"Сохранение ID в YDB: name={name}, id={assistant.id}")
                 ydb_client = get_ydb_client()
                 ydb_client.save_assistant_id(name, assistant.id)
-                logger.info(f"ID ассистента '{name}' сохранён в YDB: {assistant.id}")
+                logger.info(f"✅ ID ассистента '{name}' сохранён в YDB: {assistant.id}")
+                
+                # Проверяем, что действительно сохранилось
+                saved_id = ydb_client.get_assistant_id(name)
+                if saved_id == assistant.id:
+                    logger.info(f"✅ Проверка: ID корректно сохранён в YDB")
+                else:
+                    logger.error(f"❌ Проверка не прошла! Ожидалось: {assistant.id}, получено: {saved_id}")
             except Exception as e:
-                logger.warning(f"Не удалось сохранить ID ассистента в YDB: {e}")
+                logger.error(f"❌ Не удалось сохранить ID ассистента в YDB: {e}", exc_info=True)
+                # Не прерываем выполнение, но логируем ошибку
+        else:
+            logger.warning(f"⚠️ Не сохранено в YDB: name={name}, assistant.id={assistant.id if assistant else None}")
         
         return assistant
 
