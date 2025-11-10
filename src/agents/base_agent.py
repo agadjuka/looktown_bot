@@ -38,10 +38,16 @@ class BaseAgent:
                 instruction=instruction,
                 tools=tool_list
             )
+        
+        # Инициализируем список для отслеживания tool_calls
+        self._last_tool_calls = []
     
     def __call__(self, message: str, thread: Thread) -> str:
         """Выполнение запроса к агенту"""
         try:
+            # Очищаем предыдущие tool_calls
+            self._last_tool_calls = []
+            
             # Добавляем сообщение в Thread
             thread.write(message)
             
@@ -69,6 +75,13 @@ class BaseAgent:
                         obj = fn(**args)
                         x = obj.process(thread) if hasattr(obj, 'process') else str(obj)
                         result.append({"name": f.function.name, "content": x})
+                        
+                        # Сохраняем информацию о вызове для отслеживания
+                        self._last_tool_calls.append({
+                            "name": f.function.name,
+                            "args": args,
+                            "result": x
+                        })
                 
                 if result:
                     run.submit_tool_results(result)
