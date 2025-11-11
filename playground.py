@@ -252,7 +252,7 @@ if user_input:
                 }
                 
                 # Выполняем граф
-                result_state = st.session_state.booking_graph.invoke(initial_state)
+                result_state = st.session_state.booking_graph.compiled_graph.invoke(initial_state)
                 
                 # Завершаем запрос - добавляем финальную запись в лог
                 try:

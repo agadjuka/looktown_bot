@@ -60,7 +60,8 @@ def parse_agent_file(file_path: Path) -> dict:
             'GetClientRecords',  # из client_records_tools
             'RescheduleBooking',  # из reschedule_booking_tools
             'CancelBooking',  # из cancel_booking_tools
-            'CallManager'  # из call_manager_tools
+            'CallManager',  # из call_manager_tools
+            'AboutSalon'  # из about_salon_tools
         }
         
         # Ищем импорты инструментов из всех модулей tools
@@ -174,6 +175,7 @@ def register_all_agents(force: bool = False):
                         from src.agents.tools.cancel_booking_tools import CancelBooking
                         from src.agents.tools.reschedule_booking_tools import RescheduleBooking
                         from src.agents.tools.call_manager_tools import CallManager
+                        from src.agents.tools.about_salon_tools import AboutSalon
                         tool_mapping = {
                             'GetCategories': GetCategories,
                             'GetServices': GetServices,
@@ -183,7 +185,8 @@ def register_all_agents(force: bool = False):
                             'GetClientRecords': GetClientRecords,
                             'CancelBooking': CancelBooking,
                             'RescheduleBooking': RescheduleBooking,
-                            'CallManager': CallManager
+                            'CallManager': CallManager,
+                            'AboutSalon': AboutSalon
                         }
                         tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
                         if tools_classes:

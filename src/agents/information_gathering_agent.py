@@ -4,6 +4,7 @@
 
 from .tools.service_tools import GetCategories, GetServices, ViewService
 from .tools.call_manager_tools import CallManager
+from .tools.about_salon_tools import AboutSalon
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -31,6 +32,8 @@ class InformationGatheringAgent(BaseAgent):
 При рассказе про услугу или услуги НЕ ИСПОЛЬЗУЙ КОНТЕКСТ ПЕРЕПИСКИ С КЛИЕНТОМ. Каждый раз вызывай инструмент и давай актуальную информацию. Отвечай только на тот вопрос который тебе задали, не говори ничего лишнего.
 Если тебе задают вопрос, на который ты не знаешь ответ, ничего не придумывай, просто зови менеджера. Укажи Название услуги, информацию об услуге, продолжительность, стоимость и мастеров которые ее делают. 
 
+Если тебе задают вопрос о салоне, вызови AboutSalon и передай клиенту всю информацию оттуда
+
 # ПРИМЕРЫ ОТВЕТОВ
 Если здесь есть примеры, которые тебе подходят, используй именно их:
 В нашем салоне есть следующие услуги:
@@ -50,7 +53,7 @@ class InformationGatheringAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, ViewService, CallManager],
+            tools=[GetCategories, GetServices, ViewService, CallManager, AboutSalon],
             agent_name="Агент сбора информации"
         )
 
