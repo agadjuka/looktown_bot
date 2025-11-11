@@ -76,7 +76,7 @@ app = FastAPI(
 )
 
 async def send_to_agent(message_text, chat_id):
-    """Отправка сообщения агенту через Responses API"""
+    """Отправка сообщения агенту через LangGraph"""
     try:
         logger.agent("Обработка сообщения", chat_id)
         yandex_agent_service = get_yandex_agent_service()
@@ -136,7 +136,7 @@ def setup_application():
     if not TELEGRAM_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN не задан в переменных окружения")
     
-    logger.info("🚀 Инициализация бота с Responses API")
+    logger.info("🚀 Инициализация бота с LangGraph")
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     

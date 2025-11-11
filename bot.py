@@ -13,7 +13,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 async def send_to_agent(message_text, chat_id):
-    """Отправка сообщения агенту через Responses API"""
+    """Отправка сообщения агенту через LangGraph"""
     try:
         logger.agent("Обработка сообщения", chat_id)
         yandex_agent_service = get_yandex_agent_service()
@@ -68,7 +68,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Основная функция запуска бота"""
-    logger.info("🚀 Запуск бота с Responses API")
+    logger.info("🚀 Запуск бота с LangGraph")
     
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     
