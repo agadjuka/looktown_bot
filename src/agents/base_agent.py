@@ -9,6 +9,7 @@ from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
 from ..services.error_checker import ErrorChecker
 from ..services.call_manager_service import CallManagerService
+from ..services.llm_logger import llm_logger
 
 
 class BaseAgent:
@@ -116,13 +117,54 @@ class BaseAgent:
             
             # Добавляем сообщение в Thread только если оно еще не было добавлено (при retry не дублируем)
             if not message_added:
+                # Логируем сообщение пользователя ПЕРЕД добавлением в thread
+                thread_id = getattr(thread, 'id', None)
+                llm_logger.log_user_message(message, thread_id)
+                # Добавляем сообщение в thread (это то, что реально отправляется в LLM)
                 thread.write(message)
+            
+            # Получаем контекст thread ПОСЛЕ добавления сообщения - это то, что реально отправляется в LLM
+            thread_messages = []
+            try:
+                thread_messages = list(thread) if hasattr(thread, '__iter__') else []
+            except Exception as e:
+                logger.debug(f"Не удалось получить сообщения thread: {e}")
+            
+            # Получаем instruction и tools для логирования
+            instruction = self.instruction
+            tools = getattr(self, 'tools', {})
+            tool_list = list(tools.values()) if tools else []
+            
+            # Логируем запуск ассистента
+            thread_id = getattr(thread, 'id', None)
+            llm_logger.log_assistant_run_start(
+                agent_name=self.agent_name,
+                thread_id=thread_id,
+                instruction=instruction,
+                tools=tool_list,
+                thread_messages=thread_messages,
+                assistant_obj=self.assistant,
+                thread_obj=thread
+            )
             
             # Запускаем Assistant
             run = self.assistant.run(thread)
             logger.debug(f"Запущен run для агента {self.agent_name}, run_id: {run.id if hasattr(run, 'id') else 'N/A'}")
             
             res = run.wait()
+            
+            # Логируем ответ от LLM
+            try:
+                res_text = getattr(res, 'text', None) if res else None
+                res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                llm_logger.log_llm_response(
+                    agent_name=self.agent_name,
+                    response_text=res_text,
+                    tool_calls=res_tool_calls if res_tool_calls else None,
+                    raw_response=res
+                )
+            except Exception as e:
+                logger.debug(f"Ошибка при логировании ответа LLM: {e}")
             
             # Детальное логирование результата для диагностики
             logger.debug(f"Результат run.wait() для агента {self.agent_name}:")
@@ -224,11 +266,34 @@ class BaseAgent:
                                             "result": tool_result
                                         })
                                         
+                                        # Логируем результаты инструментов перед отправкой в LLM
+                                        tool_result_data = [{"name": tool_name, "content": tool_result}]
+                                        try:
+                                            llm_logger.log_tool_results(
+                                                agent_name=self.agent_name,
+                                                tool_results=tool_result_data
+                                            )
+                                        except Exception as e:
+                                            logger.debug(f"Ошибка при логировании результатов инструментов: {e}")
+                                        
                                         # Отправляем результат обратно в run
-                                        run.submit_tool_results([{"name": tool_name, "content": tool_result}])
+                                        run.submit_tool_results(tool_result_data)
                                         
                                         # Получаем следующий ответ от агента
                                         res = run.wait()
+                                        
+                                        # Логируем ответ от LLM после отправки результатов инструментов
+                                        try:
+                                            res_text = getattr(res, 'text', None) if res else None
+                                            res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                                            llm_logger.log_llm_response(
+                                                agent_name=self.agent_name,
+                                                response_text=res_text,
+                                                tool_calls=res_tool_calls if res_tool_calls else None,
+                                                raw_response=res
+                                            )
+                                        except Exception as e:
+                                            logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
                                         res_tool_calls = getattr(res, 'tool_calls', None)
                                         logger.debug(f"После вызова инструмента res.tool_calls: {res_tool_calls}")
                                     except Exception as e:
@@ -296,8 +361,30 @@ class BaseAgent:
                         })
                 
                 if result:
+                    # Логируем результаты инструментов перед отправкой в LLM
+                    try:
+                        llm_logger.log_tool_results(
+                            agent_name=self.agent_name,
+                            tool_results=result
+                        )
+                    except Exception as e:
+                        logger.debug(f"Ошибка при логировании результатов инструментов: {e}")
+                    
                     run.submit_tool_results(result)
                     res = run.wait()  # Получаем следующий ответ, который может содержать новые tool_calls
+                    
+                    # Логируем ответ от LLM после отправки результатов инструментов
+                    try:
+                        res_text = getattr(res, 'text', None) if res else None
+                        res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                        llm_logger.log_llm_response(
+                            agent_name=self.agent_name,
+                            response_text=res_text,
+                            tool_calls=res_tool_calls if res_tool_calls else None,
+                            raw_response=res
+                        )
+                    except Exception as e:
+                        logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
                     
                     # Детальное логирование результата в цикле
                     logger.debug(f"Результат run.wait() в цикле (итерация {iteration}):")
@@ -391,6 +478,17 @@ class BaseAgent:
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
+            
+            # Логируем ошибку в LLM лог
+            try:
+                llm_logger.log_error(
+                    agent_name=self.agent_name,
+                    error=e,
+                    context=f"Message: {message[:200]}"
+                )
+            except Exception as log_error:
+                logger.debug(f"Ошибка при логировании ошибки: {log_error}")
+            
             logger.error(f"Ошибка в агенте {self.agent_name}: {e}")
             logger.error(f"Тип ошибки: {type(e).__name__}")
             logger.error(f"Сообщение агента: {message[:200]}")

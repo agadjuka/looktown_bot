@@ -27,6 +27,7 @@ from src.services.langgraph_service import LangGraphService
 from src.graph.booking_graph import BookingGraph
 from src.graph.booking_state import BookingState
 from src.agents.dialogue_stages import DialogueStage
+from src.services.llm_logger import llm_logger
 
 # Перехватываем вызовы инструментов через monkey patching
 def patch_base_agent():
@@ -95,8 +96,24 @@ with st.sidebar:
     if st.session_state.thread:
         st.info(f"**Thread ID:**\n`{st.session_state.thread.id}`")
     
+    # Информация о текущем файле лога (если есть активный запрос)
+    if llm_logger.current_log_file:
+        log_file_name = llm_logger.current_log_file.name
+        st.info(f"**Текущий лог файл:**\n`{log_file_name}`")
+    
     # Кнопка сброса диалога
     if st.button("🔄 Сбросить диалог", type="secondary"):
+        # Закрываем текущий файл лога если есть
+        if llm_logger.current_log_file:
+            try:
+                with open(llm_logger.current_log_file, 'a', encoding='utf-8') as f:
+                    f.write(f"\n{'='*80}\n")
+                    f.write(f"DIALOG RESET BY USER\n")
+                    f.write(f"{'='*80}\n")
+            except:
+                pass
+            llm_logger.current_log_file = None
+        
         st.session_state.thread = st.session_state.langgraph_service.create_thread()
         st.session_state.messages = []
         st.session_state.tool_calls_history = []
@@ -204,6 +221,9 @@ with chat_container:
 user_input = st.chat_input("Введите сообщение...")
 
 if user_input:
+    # Начинаем новый запрос - создаём новый файл лога
+    log_file = llm_logger.start_new_request()
+    
     # Добавляем сообщение пользователя
     st.session_state.messages.append({
         "role": "user",
@@ -233,6 +253,18 @@ if user_input:
                 
                 # Выполняем граф
                 result_state = st.session_state.booking_graph.invoke(initial_state)
+                
+                # Завершаем запрос - добавляем финальную запись в лог
+                try:
+                    with open(log_file, 'a', encoding='utf-8') as f:
+                        f.write(f"\n{'='*80}\n")
+                        f.write(f"REQUEST COMPLETED SUCCESSFULLY\n")
+                        f.write(f"Final Answer: {result_state.get('answer', 'N/A')[:200]}\n")
+                        f.write(f"Agent: {result_state.get('agent_name', 'N/A')}\n")
+                        f.write(f"Stage: {result_state.get('stage', 'N/A')}\n")
+                        f.write(f"{'='*80}\n")
+                except:
+                    pass
                 
                 # Показываем стадию сразу после определения
                 detected_stage = result_state.get("stage")
@@ -351,6 +383,18 @@ if user_input:
                         st.text(f"{role_emoji} **{msg.author.role}:** {msg.text[:300]}")
                 
             except Exception as e:
+                # Завершаем запрос с ошибкой
+                try:
+                    with open(log_file, 'a', encoding='utf-8') as f:
+                        f.write(f"\n{'='*80}\n")
+                        f.write(f"REQUEST COMPLETED WITH ERROR\n")
+                        f.write(f"Error: {str(e)}\n")
+                        import traceback
+                        f.write(f"Traceback:\n{traceback.format_exc()}\n")
+                        f.write(f"{'='*80}\n")
+                except:
+                    pass
+                
                 error_msg = f"Ошибка: {str(e)}"
                 st.error(error_msg)
                 st.session_state.messages.append({
