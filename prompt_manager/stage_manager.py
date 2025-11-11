@@ -685,125 +685,220 @@ class {class_name}(BaseAgent):
             print(f"Ошибка при удалении из dialogue_stages: {e}")
             return False
     
+    def _get_tool_module_mapping(self) -> Dict[str, str]:
+        """Определяет модуль для каждого инструмента"""
+        tool_classes = self.load_tool_classes()
+        module_mapping = {}
+        
+        for tool_name, tool_class in tool_classes.items():
+            # Получаем модуль класса
+            module_name = tool_class.__module__
+            # Извлекаем имя модуля (последняя часть после точки)
+            if '.' in module_name:
+                module_parts = module_name.split('.')
+                # Ищем часть, которая начинается с 'tools'
+                tools_idx = None
+                for i, part in enumerate(module_parts):
+                    if part == 'tools':
+                        tools_idx = i
+                        break
+                
+                if tools_idx is not None and tools_idx + 1 < len(module_parts):
+                    # Берем имя модуля после 'tools'
+                    module_file = module_parts[tools_idx + 1]
+                    module_mapping[tool_name] = module_file
+                else:
+                    # По умолчанию service_tools
+                    module_mapping[tool_name] = 'service_tools'
+            else:
+                module_mapping[tool_name] = 'service_tools'
+        
+        return module_mapping
+    
     def update_stage_tools(self, file_path: str, tools: List[str]) -> bool:
         """Обновить инструменты в файле агента"""
+        import re
         try:
             full_path = self.project_root / file_path
             if not full_path.exists():
                 return False
             
             with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
+                content = f.read()
+                lines = content.splitlines(keepends=True)
             
-            # Определяем текущие инструменты из импорта (динамически)
-            available_tools = self.get_available_tools()
-            current_tools = []
-            import_line_idx = None
+            # Определяем модуль для каждого инструмента
+            tool_module_mapping = self._get_tool_module_mapping()
+            
+            # Группируем инструменты по модулям
+            tools_by_module = {}
+            for tool in tools:
+                module = tool_module_mapping.get(tool, 'service_tools')
+                if module not in tools_by_module:
+                    tools_by_module[module] = []
+                tools_by_module[module].append(tool)
+            
+            # Удаляем все старые импорты инструментов
+            new_lines = []
+            skip_imports = False
             for i, line in enumerate(lines):
-                if 'from .tools.service_tools import' in line:
-                    import_line_idx = i
-                    # Извлекаем инструменты из импорта
-                    import_part = line.split('import')[1].strip()
-                    # Убираем возможные переносы строк и пробелы
-                    import_part = import_part.replace('\n', '').strip()
-                    # Парсим список инструментов
-                    tools_in_import = [t.strip() for t in import_part.split(',')]
-                    current_tools = [t for t in tools_in_import if t in available_tools]
-                    break
-            
-            # Если инструменты не изменились, ничего не делаем
-            if set(current_tools) == set(tools):
-                return True
-            
-            # Обновляем импорт
-            if import_line_idx is not None:
-                if tools:
-                    tools_imports = ', '.join(sorted(tools))
-                    new_import_line = f'from .tools.service_tools import {tools_imports}\n'
-                else:
-                    # Если инструментов нет, удаляем строку импорта
-                    new_import_line = ''
-                lines[import_line_idx] = new_import_line
-            else:
-                # Если импорта нет, добавляем после docstring
-                docstring_end = None
-                for i, line in enumerate(lines):
-                    if '"""' in line:
-                        if docstring_end is None:
-                            docstring_end = i
-                        else:
-                            # Конец docstring
-                            if tools:
-                                tools_imports = ', '.join(sorted(tools))
-                                new_import_line = f'from .tools.service_tools import {tools_imports}\n'
-                                lines.insert(i + 1, new_import_line)
+                # Пропускаем строки с импортами инструментов
+                if 'from .tools.' in line and ('import' in line):
+                    # Проверяем, является ли это импортом инструмента
+                    if any(tool in line for tool in self.get_available_tools()):
+                        skip_imports = True
+                        continue
+                
+                # Если это пустая строка после удаленных импортов, пропускаем лишние
+                if skip_imports and line.strip() == '':
+                    # Проверяем, есть ли еще импорты инструментов ниже
+                    has_more_imports = False
+                    for j in range(i + 1, min(i + 3, len(lines))):
+                        if 'from .tools.' in lines[j] and any(tool in lines[j] for tool in self.get_available_tools()):
+                            has_more_imports = True
                             break
+                    if not has_more_imports:
+                        skip_imports = False
+                        continue
+                
+                new_lines.append(line)
             
-            # Обновляем список tools в super().__init__()
-            # Ищем строку с tools=[...]
-            tools_line_idx = None
+            lines = new_lines
+            
+            # Находим место для вставки новых импортов (после docstring, перед другими импортами)
+            insert_pos = None
             for i, line in enumerate(lines):
-                if 'tools=[' in line or 'tools = [' in line:
-                    tools_line_idx = i
+                if '"""' in line:
+                    # Ищем конец docstring
+                    for j in range(i + 1, len(lines)):
+                        if '"""' in lines[j]:
+                            insert_pos = j + 1
+                            break
                     break
             
-            if tools_line_idx is not None:
-                # Заменяем строку с tools
-                if tools:
-                    tools_list = ', '.join(sorted(tools))
-                    new_tools_line = f'            tools=[{tools_list}],\n'
-                else:
-                    new_tools_line = '            tools=None,\n'
-                lines[tools_line_idx] = new_tools_line
-            else:
-                # Если параметра нет, добавляем его в super().__init__()
+            if insert_pos is None:
+                # Если docstring не найден, ищем после первого импорта
                 for i, line in enumerate(lines):
-                    if 'super().__init__(' in line:
-                        # Ищем закрывающую скобку
-                        start_pos = line.find('super().__init__(') + len('super().__init__(')
-                        paren_count = 1
-                        end_pos = start_pos
-                        found_end = False
-                        
-                        # Проверяем текущую строку
-                        for j in range(start_pos, len(line)):
-                            if line[j] == '(':
+                    if line.strip().startswith('from ') or line.strip().startswith('import '):
+                        insert_pos = i
+                        break
+            
+            if insert_pos is None:
+                insert_pos = 0
+            
+            # Добавляем новые импорты
+            import_lines = []
+            for module, module_tools in sorted(tools_by_module.items()):
+                if module_tools:
+                    tools_list = ', '.join(sorted(module_tools))
+                    import_line = f'from .tools.{module} import {tools_list}\n'
+                    import_lines.append(import_line)
+            
+            # Вставляем импорты
+            if import_lines:
+                # Добавляем пустую строку перед импортами, если нужно
+                if insert_pos > 0 and lines[insert_pos - 1].strip() != '':
+                    lines.insert(insert_pos, '\n')
+                    insert_pos += 1
+                
+                for import_line in import_lines:
+                    lines.insert(insert_pos, import_line)
+                    insert_pos += 1
+            
+            # Удаляем все вхождения tools= в super().__init__()
+            # Ищем super().__init__ и удаляем все параметры tools
+            super_init_start = None
+            super_init_end = None
+            
+            for i, line in enumerate(lines):
+                if 'super().__init__(' in line:
+                    super_init_start = i
+                    # Ищем закрывающую скобку
+                    paren_count = 0
+                    found_open = False
+                    for j in range(i, min(i + 15, len(lines))):
+                        for char in lines[j]:
+                            if char == '(':
                                 paren_count += 1
-                            elif line[j] == ')':
+                                found_open = True
+                            elif char == ')':
                                 paren_count -= 1
-                                if paren_count == 0:
-                                    end_pos = j
-                                    found_end = True
+                                if paren_count == 0 and found_open:
+                                    super_init_end = j
                                     break
-                        
-                        # Если не нашли в текущей строке, ищем в следующих
-                        if not found_end:
-                            for j in range(i + 1, min(i + 10, len(lines))):
-                                for k, char in enumerate(lines[j]):
-                                    if char == '(':
-                                        paren_count += 1
-                                    elif char == ')':
-                                        paren_count -= 1
-                                        if paren_count == 0:
-                                            # Вставляем tools перед закрывающей скобкой
-                                            if tools:
-                                                tools_list = ', '.join(sorted(tools))
-                                                new_param = f', tools=[{tools_list}]'
-                                            else:
-                                                new_param = ', tools=None'
-                                            lines[j] = lines[j][:k] + new_param + lines[j][k:]
-                                            found_end = True
-                                            break
-                                if found_end:
+                        if super_init_end is not None:
+                            break
+                    break
+            
+            # Удаляем все вхождения tools= в super().__init__()
+            # Ищем super().__init__ и удаляем все параметры tools
+            super_init_start = None
+            super_init_end = None
+            
+            for i, line in enumerate(lines):
+                if 'super().__init__(' in line:
+                    super_init_start = i
+                    # Ищем закрывающую скобку
+                    paren_count = 0
+                    found_open = False
+                    for j in range(i, min(i + 15, len(lines))):
+                        for char in lines[j]:
+                            if char == '(':
+                                paren_count += 1
+                                found_open = True
+                            elif char == ')':
+                                paren_count -= 1
+                                if paren_count == 0 and found_open:
+                                    super_init_end = j
                                     break
-                        else:
-                            # Вставляем tools в текущей строке
-                            if tools:
-                                tools_list = ', '.join(sorted(tools))
-                                new_param = f', tools=[{tools_list}]'
+                        if super_init_end is not None:
+                            break
+                    break
+            
+            if super_init_start is not None and super_init_end is not None:
+                # Собираем все строки между super_init_start и super_init_end
+                super_init_lines = []
+                for i in range(super_init_start, super_init_end + 1):
+                    super_init_lines.append(lines[i])
+                
+                # Объединяем в одну строку для обработки
+                super_init_content = ''.join(super_init_lines)
+                
+                # Удаляем все вхождения tools=... (включая запятые перед/после)
+                # Паттерн для удаления: запятая (опционально), пробелы, tools=, значение до запятой или закрывающей скобки
+                super_init_content = re.sub(r',?\s*tools\s*=\s*\[[^\]]*\],?\s*', '', super_init_content)
+                super_init_content = re.sub(r',?\s*tools\s*=\s*None,?\s*', '', super_init_content)
+                
+                # Разбиваем обратно на строки
+                new_super_lines = super_init_content.splitlines(keepends=True)
+                
+                # Заменяем строки
+                lines[super_init_start:super_init_end + 1] = new_super_lines
+                
+                # Теперь добавляем tools= в правильное место
+                # Ищем закрывающую скобку в новых строках
+                for i in range(super_init_start, len(lines)):
+                    if ')' in lines[i]:
+                        # Вставляем tools перед закрывающей скобкой
+                        if tools:
+                            tools_list = ', '.join(sorted(tools))
+                            bracket_pos = lines[i].rfind(')')
+                            if bracket_pos > 0:
+                                before_bracket = lines[i][:bracket_pos].rstrip()
+                                if before_bracket and not before_bracket.endswith(','):
+                                    tools_param = f', tools=[{tools_list}]'
+                                else:
+                                    tools_param = f'tools=[{tools_list}]'
+                                lines[i] = lines[i][:bracket_pos] + tools_param + lines[i][bracket_pos:]
                             else:
-                                new_param = ', tools=None'
-                            lines[i] = line[:end_pos] + new_param + line[end_pos:]
+                                # Если скобка в начале строки, добавляем на предыдущей строке
+                                if i > super_init_start:
+                                    prev_line = lines[i - 1].rstrip()
+                                    if prev_line and not prev_line.endswith(','):
+                                        tools_param = f', tools=[{tools_list}]'
+                                    else:
+                                        tools_param = f'tools=[{tools_list}]'
+                                    lines[i - 1] = prev_line + tools_param + '\n'
                         break
             
             # Сохраняем файл

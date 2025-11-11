@@ -348,4 +348,48 @@ class YclientsService:
                     formatted_records.append(formatted_record)
                 
                 return formatted_records
-
+    
+    async def cancel_record(self, record_id: int) -> Dict[str, Any]:
+        """
+        Отменить запись по ID
+        
+        Args:
+            record_id: ID записи для отмены
+            
+        Returns:
+            Dict с результатом операции:
+            - success: bool - успешность операции
+            - message: str - сообщение о результате
+            - data: Optional[Dict] - данные об отмененной записи
+            - error: Optional[str] - сообщение об ошибке
+        """
+        url = f"{self.BASE_URL}/record/{self.company_id}/{record_id}"
+        headers = {
+            "Accept": "application/vnd.yclients.v2+json",
+            "Authorization": self.auth_header,
+            "Content-Type": "application/json"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.delete(url, headers=headers) as response:
+                response_text = await response.text()
+                
+                # Проверяем успешность операции (статус 200-299)
+                if 200 <= response.status < 300:
+                    return {
+                        "success": True,
+                        "message": "Запись успешно отменена",
+                        "data": {
+                            "record_id": record_id,
+                            "deleted": True
+                        },
+                        "error": None
+                    }
+                else:
+                    # Ошибка от API
+                    return {
+                        "success": False,
+                        "message": None,
+                        "data": None,
+                        "error": f"Ошибка при отмене записи: HTTP {response.status}. {response_text[:500]}"
+                    }
