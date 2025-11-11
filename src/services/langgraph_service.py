@@ -48,20 +48,14 @@ class LangGraphService:
             assistant_id = ydb_client.get_assistant_id(name)
             
             if assistant_id:
-                logger.info(f"Найден ID ассистента '{name}' в YDB: {assistant_id}")
                 try:
                     assistant = self.sdk.assistants.get(assistant_id)
-                    logger.info(f"Успешно загружен ассистент '{name}' по ID: {assistant_id}")
                     return assistant
                 except Exception as e:
-                    # Просто возвращаем None, не удаляя из YDB
-                    logger.info(f"Ассистент с ID {assistant_id} не найден в Yandex Cloud: {e}")
                     return None
             
-            logger.info(f"Ассистент '{name}' не найден в YDB")
             return None
         except Exception as e:
-            logger.warning(f"Ошибка при поиске ассистента по имени: {e}")
             return None
     
     def get_or_create_assistant(self, instruction: str, tools: list = None, name: str = None):
@@ -76,22 +70,6 @@ class LangGraphService:
         if name:
             existing = self.find_assistant_by_name(name)
             if existing:
-                # Если требуются инструменты, но существующий Assistant их не имеет - создаём нового
-                if tools and len(tools) > 0:
-                    # Проверяем наличие инструментов у существующего Assistant
-                    existing_tools = getattr(existing, 'tools', None)
-                    if not existing_tools or (isinstance(existing_tools, (list, tuple)) and len(existing_tools) == 0):
-                        logger.warning(f"Существующий ассистент '{name}' не имеет инструментов. Создаём нового с инструментами.")
-                        # Удаляем старый ID из YDB
-                        try:
-                            ydb_client = get_ydb_client()
-                            ydb_client.delete_assistant_id(name)
-                        except Exception as e:
-                            logger.warning(f"Не удалось удалить старый ID из YDB: {e}")
-                        # Создаём нового с инструментами
-                        return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=True)
-                
-                logger.info(f"Используем существующего ассистента: {name}")
                 return existing
         
         # Если не нашли или имя не указано - создаём нового без сохранения в YDB (для Playground)
@@ -106,22 +84,14 @@ class LangGraphService:
             name: Имя ассистента
             skip_ydb_save: Если True, не сохраняет ID в YDB (для Playground)
         """
-        logger.info(f"=== СОЗДАНИЕ ASSISTANT ===")
-        logger.info(f"name: {name}")
-        logger.info(f"instruction длина: {len(instruction) if instruction else 0}")
-        logger.info(f"tools: {len(tools) if tools else 0}")
-        
         kwargs = {}
         if tools and len(tools) > 0:
             kwargs = {"tools": tools}
-            logger.info(f"Инструменты добавлены в kwargs")
         
         # Добавляем имя если указано
         if name:
             kwargs["name"] = name
-            logger.info(f"Имя добавлено в kwargs: {name}")
         
-        logger.info(f"Создание нового ассистента: {name or 'Без имени'}")
         try:
             assistant = self.sdk.assistants.create(
                 self.model,
@@ -131,16 +101,13 @@ class LangGraphService:
                 max_tokens=6000,
                 **kwargs
             )
-            logger.info(f"✅ Assistant создан в Yandex Cloud: ID={assistant.id}")
         except Exception as e:
             logger.error(f"❌ Ошибка создания Assistant в Yandex Cloud: {e}", exc_info=True)
             raise
         
         if instruction:
             try:
-                logger.info("Обновление инструкции...")
                 assistant.update(instruction=instruction)
-                logger.info("✅ Инструкция обновлена")
             except Exception as e:
                 logger.error(f"❌ Ошибка обновления инструкции: {e}", exc_info=True)
                 raise
@@ -148,24 +115,10 @@ class LangGraphService:
         # Сохраняем ID в YDB для переиспользования (если не пропущено)
         if not skip_ydb_save and name and assistant.id:
             try:
-                logger.info(f"Сохранение ID в YDB: name={name}, id={assistant.id}")
                 ydb_client = get_ydb_client()
                 ydb_client.save_assistant_id(name, assistant.id)
-                logger.info(f"✅ ID ассистента '{name}' сохранён в YDB: {assistant.id}")
-                
-                # Проверяем, что действительно сохранилось
-                saved_id = ydb_client.get_assistant_id(name)
-                if saved_id == assistant.id:
-                    logger.info(f"✅ Проверка: ID корректно сохранён в YDB")
-                else:
-                    logger.error(f"❌ Проверка не прошла! Ожидалось: {assistant.id}, получено: {saved_id}")
             except Exception as e:
                 logger.error(f"❌ Не удалось сохранить ID ассистента в YDB: {e}", exc_info=True)
-                # Не прерываем выполнение, но логируем ошибку
-        elif skip_ydb_save:
-            logger.info(f"⏭️ Пропущено сохранение в YDB (skip_ydb_save=True)")
-        else:
-            logger.warning(f"⚠️ Не сохранено в YDB: name={name}, assistant.id={assistant.id if assistant else None}")
         
         return assistant
 

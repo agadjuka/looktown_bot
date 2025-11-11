@@ -53,17 +53,31 @@ def parse_agent_file(file_path: Path) -> dict:
         
         # Определяем используемые инструменты из импортов
         tools = []
-        # Ищем импорты инструментов из service_tools
-        tools_import_match = re.search(r'from\s+\.tools\.service_tools\s+import\s+([^\n]+)', content)
-        if tools_import_match:
-            tools_str = tools_import_match.group(1)
+        
+        # Список всех доступных инструментов
+        valid_tools = {
+            'GetCategories', 'GetServices', 'BookTimes', 'CreateBooking',  # из service_tools
+            'GetClientRecords',  # из client_records_tools
+            'RescheduleBooking',  # из reschedule_booking_tools
+            'CancelBooking'  # из cancel_booking_tools
+        }
+        
+        # Ищем импорты инструментов из всех модулей tools
+        # Паттерн для поиска импортов: from .tools.module_name import Tool1, Tool2, ...
+        tools_imports_pattern = r'from\s+\.tools\.(\w+)\s+import\s+([^\n]+)'
+        tools_imports_matches = re.findall(tools_imports_pattern, content)
+        
+        for module_name, tools_str in tools_imports_matches:
             # Извлекаем имена классов инструментов (убираем возможные переносы строк)
             tools_str = tools_str.replace('\n', ' ').strip()
             # Разбиваем по запятым и очищаем
             tools_list = [t.strip() for t in tools_str.split(',')]
             # Фильтруем только валидные имена классов
-            valid_tools = ['GetCategories', 'GetServices', 'BookTimes', 'CreateBooking']
-            tools = [t for t in tools_list if t in valid_tools]
+            found_tools = [t for t in tools_list if t in valid_tools]
+            tools.extend(found_tools)
+        
+        # Убираем дубликаты, сохраняя порядок
+        tools = list(dict.fromkeys(tools))
         
         # Определяем стадию из имени файла
         stage = file_path.stem
