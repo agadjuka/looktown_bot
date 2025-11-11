@@ -60,17 +60,59 @@ class LangGraphService:
     
     def get_or_create_assistant(self, instruction: str, tools: list = None, name: str = None):
         """Получить существующего Assistant по имени или создать нового
+        Проверяет, совпадают ли инструменты, и пересоздает Assistant если нужно
         
         Args:
             instruction: Инструкция для ассистента
-            tools: Список инструментов
+            tools: Список инструментов (уже созданные через sdk.tools.function)
             name: Имя ассистента
         """
         # Если имя указано, пытаемся найти существующего
         if name:
             existing = self.find_assistant_by_name(name)
             if existing:
-                return existing
+                # Получаем имена существующих инструментов
+                existing_tools = getattr(existing, 'tools', None) or []
+                existing_tool_names = set()
+                for tool in existing_tools:
+                    if hasattr(tool, 'function'):
+                        func = tool.function
+                        if hasattr(func, 'name'):
+                            existing_tool_names.add(func.name)
+                        elif isinstance(func, dict) and 'name' in func:
+                            existing_tool_names.add(func['name'])
+                
+                # Получаем имена новых инструментов
+                new_tool_names = set()
+                if tools:
+                    for tool in tools:
+                        if hasattr(tool, 'function'):
+                            func = tool.function
+                            if hasattr(func, 'name'):
+                                new_tool_names.add(func.name)
+                            elif isinstance(func, dict) and 'name' in func:
+                                new_tool_names.add(func['name'])
+                
+                # Если инструменты не совпадают, пересоздаем Assistant
+                if existing_tool_names != new_tool_names:
+                    logger.info(f"Инструменты Assistant '{name}' не совпадают. Пересоздаём Assistant.")
+                    logger.debug(f"Существующие инструменты: {existing_tool_names}")
+                    logger.debug(f"Новые инструменты: {new_tool_names}")
+                    try:
+                        existing.delete()
+                        logger.info(f"Старый Assistant '{name}' удалён")
+                    except Exception as e:
+                        logger.warning(f"Не удалось удалить старый Assistant: {e}")
+                    # Создаём новый с правильными инструментами
+                    return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=False)
+                else:
+                    # Инструменты совпадают, обновляем только инструкцию если нужно
+                    if instruction:
+                        try:
+                            existing.update(instruction=instruction)
+                        except Exception as e:
+                            logger.warning(f"Не удалось обновить инструкцию Assistant: {e}")
+                    return existing
         
         # Если не нашли или имя не указано - создаём нового без сохранения в YDB (для Playground)
         return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=True)

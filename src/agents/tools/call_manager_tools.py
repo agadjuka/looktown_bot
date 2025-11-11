@@ -47,8 +47,7 @@ class CallManager(BaseModel):
             Строка с маркером [CALL_MANAGER] для обработки в BaseAgent
         """
         try:
-            from ..services.escalation_service import EscalationService
-            from ..services.logger_service import logger
+            from ...services.escalation_service import EscalationService
             
             # Извлекаем последние сообщения из Thread
             messages = self._extract_last_messages(thread, count=3)
@@ -88,7 +87,7 @@ class CallManager(BaseModel):
     
     def _extract_last_messages(self, thread: Thread, count: int = 3) -> list:
         """
-        Извлекает последние N сообщений из Thread
+        Извлекает последние N сообщений из Thread (только реальные сообщения user и assistant)
         
         Args:
             thread: Thread с историей диалога
@@ -102,25 +101,40 @@ class CallManager(BaseModel):
             # Получаем все сообщения из thread
             thread_messages = list(thread) if hasattr(thread, '__iter__') else []
             
-            # Берем последние count сообщений
-            last_messages = thread_messages[-count:] if len(thread_messages) > count else thread_messages
-            
-            for msg in last_messages:
+            # Фильтруем только реальные сообщения (user и assistant)
+            real_messages = []
+            for msg in thread_messages:
                 # Определяем роль сообщения
-                role = "user"
-                content = ""
+                role = None
                 
-                # Проверяем атрибуты сообщения
-                if hasattr(msg, 'role'):
+                # Проверяем атрибуты сообщения для определения роли
+                if hasattr(msg, 'author') and hasattr(msg.author, 'role'):
+                    role = msg.author.role
+                elif hasattr(msg, 'role'):
                     role = msg.role
                 elif hasattr(msg, 'author_role'):
                     role = msg.author_role
                 
+                # Нормализуем роль
+                if role:
+                    role_lower = role.lower()
+                    if role_lower in ['user']:
+                        role = "user"
+                    elif role_lower in ['assistant', 'model']:
+                        role = "assistant"
+                    else:
+                        # Пропускаем сообщения с неизвестной ролью (например, system, metadata и т.д.)
+                        continue
+                else:
+                    # Если роль не определена, пропускаем
+                    continue
+                
                 # Получаем содержимое
-                if hasattr(msg, 'content'):
-                    content = msg.content
-                elif hasattr(msg, 'text'):
+                content = ""
+                if hasattr(msg, 'text'):
                     content = msg.text
+                elif hasattr(msg, 'content'):
+                    content = msg.content
                 elif hasattr(msg, 'parts'):
                     # Если есть parts, берем текст из первого part
                     parts = msg.parts
@@ -131,25 +145,21 @@ class CallManager(BaseModel):
                         elif isinstance(first_part, dict) and 'text' in first_part:
                             content = first_part['text']
                 
-                # Нормализуем роль
-                if role in ['user', 'USER', 'User']:
-                    role = "user"
-                elif role in ['assistant', 'ASSISTANT', 'Assistant', 'model', 'MODEL']:
-                    role = "assistant"
-                else:
-                    # По умолчанию считаем user
-                    role = "user"
-                
-                if content:
-                    messages.append({
+                # Добавляем только сообщения с непустым содержимым
+                if content and str(content).strip():
+                    real_messages.append({
                         "role": role,
-                        "content": str(content)
+                        "content": str(content).strip()
                     })
+            
+            # Берем последние count сообщений
+            if real_messages:
+                messages = real_messages[-count:] if len(real_messages) > count else real_messages
         
         except Exception as e:
             logger.error(f"Ошибка при извлечении сообщений из Thread: {e}")
-            # Возвращаем пустой список или базовое сообщение
-            messages = [{"role": "user", "content": "Не удалось извлечь историю сообщений"}]
+            # Возвращаем пустой список
+            messages = []
         
         return messages
     
@@ -176,9 +186,37 @@ class CallManager(BaseModel):
                 role = msg.get("role", "unknown")
                 content = msg.get("content", "")
                 role_label = "user" if role == "user" else "assistant"
-                report_lines.append(f"- {role_label}: {content}")
+                # Экранируем специальные символы Markdown в содержимом
+                content_escaped = self._escape_markdown(content)
+                report_lines.append(f"- {role_label}: {content_escaped}")
         else:
             report_lines.append("История сообщений недоступна")
         
         return "\n".join(report_lines)
+    
+    def _escape_markdown(self, text: str) -> str:
+        """
+        Экранирует специальные символы Markdown в тексте
+        
+        Args:
+            text: Текст для экранирования
+            
+        Returns:
+            Текст с экранированными специальными символами
+        """
+        if not text:
+            return text
+        
+        # Символы, которые нужно экранировать в Markdown
+        # Простое экранирование основных символов
+        text = text.replace('\\', '\\\\')  # Сначала экранируем обратные слеши
+        text = text.replace('*', '\\*')
+        text = text.replace('_', '\\_')
+        text = text.replace('[', '\\[')
+        text = text.replace(']', '\\]')
+        text = text.replace('(', '\\(')
+        text = text.replace(')', '\\)')
+        text = text.replace('`', '\\`')
+        
+        return text
 
