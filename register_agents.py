@@ -56,12 +56,13 @@ def parse_agent_file(file_path: Path) -> dict:
         
         # Список всех доступных инструментов
         valid_tools = {
-            'GetCategories', 'GetServices', 'BookTimes', 'CreateBooking', 'ViewService',  # из service_tools
+            'GetCategories', 'GetServices', 'BookTimes', 'CreateBooking', 'ViewService', 'FindMasterByService',  # из service_tools
             'GetClientRecords',  # из client_records_tools
             'RescheduleBooking',  # из reschedule_booking_tools
             'CancelBooking',  # из cancel_booking_tools
             'CallManager',  # из call_manager_tools
-            'AboutSalon'  # из about_salon_tools
+            'AboutSalon',  # из about_salon_tools
+            'Masters'  # из masters_tools
         }
         
         # Ищем импорты инструментов из всех модулей tools
@@ -170,23 +171,26 @@ def register_all_agents(force: bool = False):
                 if agent['tools']:
                     logger.info(f"Найдены инструменты в агенте: {agent['tools']}")
                     try:
-                        from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking, ViewService
+                        from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking, ViewService, FindMasterByService
                         from src.agents.tools.client_records_tools import GetClientRecords
                         from src.agents.tools.cancel_booking_tools import CancelBooking
                         from src.agents.tools.reschedule_booking_tools import RescheduleBooking
                         from src.agents.tools.call_manager_tools import CallManager
                         from src.agents.tools.about_salon_tools import AboutSalon
+                        from src.agents.tools.masters_tools import Masters
                         tool_mapping = {
                             'GetCategories': GetCategories,
                             'GetServices': GetServices,
                             'BookTimes': BookTimes,
                             'CreateBooking': CreateBooking,
                             'ViewService': ViewService,
+                            'FindMasterByService': FindMasterByService,
                             'GetClientRecords': GetClientRecords,
                             'CancelBooking': CancelBooking,
                             'RescheduleBooking': RescheduleBooking,
                             'CallManager': CallManager,
-                            'AboutSalon': AboutSalon
+                            'AboutSalon': AboutSalon,
+                            'Masters': Masters
                         }
                         tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
                         if tools_classes:

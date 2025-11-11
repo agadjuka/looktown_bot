@@ -234,7 +234,7 @@ async def create_booking_logic(
         master_name: Имя мастера (опционально)
         
     Returns:
-        dict: Результат создания записи с полями success, message, master_name, datetime, service_title
+        dict: Результат создания записи с полями success, message, master_name, datetime, service_title, price (если доступна)
     """
     try:
         # 0. Нормализуем номер телефона к формату +7XXXXXXXXXX
@@ -325,14 +325,120 @@ async def create_booking_logic(
                 "service_title": service_title
             }
         
-        # 5. Формируем успешный ответ
-        return {
+        # 5. Извлекаем цену и другие данные из ответа API
+        price = None
+        response_data = booking_response.get("data", {})
+        
+        # Структура ответа: data.data.services[0].cost
+        if isinstance(response_data, dict):
+            # Проверяем вложенную структуру data.data
+            nested_data = response_data.get("data", {})
+            if isinstance(nested_data, dict):
+                # Ищем цену в services[0].cost
+                services = nested_data.get("services", [])
+                if services and isinstance(services, list) and len(services) > 0:
+                    first_service = services[0]
+                    if isinstance(first_service, dict):
+                        price = first_service.get("cost") or first_service.get("price")
+        
+        # 6. Форматируем дату и время в удобный формат
+        def format_datetime_russian(datetime_str: str) -> str:
+            """Форматирует дату и время в русский формат: '13 ноября 2025, 12:00'"""
+            try:
+                from datetime import datetime
+                
+                # Парсим дату и время
+                date_part = ""
+                time_part = ""
+                
+                if 'T' in datetime_str:
+                    parts = datetime_str.split('T', 1)
+                    date_part = parts[0]
+                    if len(parts) > 1:
+                        # Убираем часовой пояс и секунды
+                        time_str = parts[1]
+                        if '+' in time_str:
+                            time_str = time_str.split('+')[0]
+                        elif '-' in time_str and len(time_str.split('-')) > 3:
+                            # Проверяем, не является ли последняя часть часовым поясом
+                            time_parts = time_str.rsplit('-', 1)
+                            if ':' in time_parts[-1]:
+                                time_str = time_parts[0]
+                        time_parts = time_str.split(':')
+                        if len(time_parts) >= 2:
+                            time_part = f"{time_parts[0]}:{time_parts[1]}"
+                elif ' ' in datetime_str:
+                    parts = datetime_str.split(' ', 1)
+                    date_part = parts[0]
+                    if len(parts) > 1:
+                        time_str = parts[1]
+                        # Убираем секунды, если есть
+                        time_parts = time_str.split(':')
+                        if len(time_parts) >= 2:
+                            time_part = f"{time_parts[0]}:{time_parts[1]}"
+                else:
+                    date_part = datetime_str
+                
+                # Парсим дату
+                date_obj = datetime.strptime(date_part, "%Y-%m-%d")
+                
+                # Названия месяцев в родительном падеже
+                months_ru = {
+                    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+                    5: "мая", 6: "июня", 7: "июля", 8: "августа",
+                    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря"
+                }
+                
+                day = date_obj.day
+                month = months_ru[date_obj.month]
+                year = date_obj.year
+                
+                # Форматируем дату: "13 ноября 2025"
+                date_formatted = f"{day} {month} {year}"
+                
+                # Форматируем время (убираем ведущие нули)
+                if time_part:
+                    time_parts = time_part.split(':')
+                    if len(time_parts) >= 2:
+                        hours = str(int(time_parts[0]))  # Убираем ведущие нули
+                        minutes = time_parts[1]
+                        time_formatted = f"{hours}:{minutes}"
+                        return f"{date_formatted}, {time_formatted}"
+                
+                return date_formatted
+            except Exception as e:
+                # В случае ошибки возвращаем исходную строку
+                return datetime_str
+        
+        formatted_datetime = format_datetime_russian(datetime)
+        
+        # 7. Формируем успешный ответ с полной информацией
+        message_parts = [
+            f"{client_name}, успешно записано на услугу",
+            f"{service_title}",
+            f"{formatted_datetime}",
+            f"к мастеру {master_name_result}"
+        ]
+        
+        if price is not None:
+            message_parts.append(f"Цена: {price} руб.")
+        
+        message = ". ".join(message_parts) + "."
+        
+        result = {
             "success": True,
-            "message": f"Запись успешно создана! Вы записаны к мастеру {master_name_result} на {datetime}",
+            "message": message,
             "master_name": master_name_result,
             "datetime": datetime,
-            "service_title": service_title
+            "service_title": service_title,
+            "client_name": client_name
         }
+        
+        # Добавляем цену, если она была найдена
+        if price is not None:
+            result["price"] = price
+        
+        return result
         
     except Exception as e:
         return {

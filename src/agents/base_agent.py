@@ -238,151 +238,178 @@ class BaseAgent:
             logger.debug(f"  - res.tool_calls is None: {res_tool_calls is None}")
             logger.debug(f"  - res.tool_calls is empty: {res_tool_calls == [] if res_tool_calls is not None else 'N/A'}")
             
-            # Проверяем, не является ли res.text JSON-описанием инструмента
-            # Если да, то это промежуточная стадия и нужно продолжить обработку
-            if res_tool_calls is None or (isinstance(res_tool_calls, list) and len(res_tool_calls) == 0):
-                try:
-                    res_text_check = res.text
-                    if res_text_check:
-                        # Проверяем, не является ли это JSON с описанием инструмента
-                        try:
-                            parsed_json = json.loads(res_text_check)
-                            if isinstance(parsed_json, dict):
-                                # Проверяем два случая:
-                                # 1. JSON с полем 'tool' - явный вызов инструмента
-                                # 2. JSON с полем 'reason' - попытка вызвать CallManager
-                                tool_name = None
-                                tool_args = {}
-                                
-                                if 'tool' in parsed_json:
-                                    tool_name = parsed_json.get('tool')
-                                    tool_args = parsed_json.get('arguments', {})
-                                elif 'reason' in parsed_json and 'CallManager' in self.tools:
-                                    # Модель пытается вызвать CallManager через JSON
-                                    tool_name = 'CallManager'
-                                    tool_args = {'reason': parsed_json.get('reason', 'Не указана причина')}
-                                    logger.warning(f"Обнаружен JSON с полем 'reason' - интерпретируем как вызов CallManager")
-                                
-                                if tool_name:
-                                    logger.warning(f"Обнаружен JSON с инструментом в res.text, но res.tool_calls пустой.")
-                                    logger.warning(f"Инструмент: {tool_name}, аргументы: {tool_args}")
+            # Обрабатываем JSON с инструментами в цикле, пока они не закончатся
+            # Это нужно, потому что SDK иногда возвращает инструменты в виде JSON в res.text вместо res.tool_calls
+            max_json_iterations = 10  # Защита от бесконечного цикла
+            json_iteration = 0
+            
+            while json_iteration < max_json_iterations:
+                json_iteration += 1
+                
+                # Проверяем, не является ли res.text JSON-описанием инструмента
+                # Если да, то это промежуточная стадия и нужно продолжить обработку
+                if res_tool_calls is None or (isinstance(res_tool_calls, list) and len(res_tool_calls) == 0):
+                    try:
+                        res_text_check = res.text
+                        if res_text_check:
+                            # Проверяем, не является ли это JSON с описанием инструмента
+                            try:
+                                parsed_json = json.loads(res_text_check)
+                                if isinstance(parsed_json, dict):
+                                    # Проверяем два случая:
+                                    # 1. JSON с полем 'tool' - явный вызов инструмента
+                                    # 2. JSON с полем 'reason' - попытка вызвать CallManager
+                                    tool_name = None
+                                    tool_args = {}
                                     
-                                    # Если инструмент есть в списке доступных, вызываем его вручную
-                                    # Проверяем регистронезависимо, так как SDK может возвращать lowercase
-                                    tool_found = None
+                                    if 'tool' in parsed_json:
+                                        tool_name = parsed_json.get('tool')
+                                        tool_args = parsed_json.get('arguments', {})
+                                    elif 'reason' in parsed_json and 'CallManager' in self.tools:
+                                        # Модель пытается вызвать CallManager через JSON
+                                        tool_name = 'CallManager'
+                                        tool_args = {'reason': parsed_json.get('reason', 'Не указана причина')}
+                                        logger.warning(f"Обнаружен JSON с полем 'reason' - интерпретируем как вызов CallManager")
                                     
-                                    # Сначала пробуем точное совпадение
-                                    if tool_name in self.tools:
-                                        tool_found = tool_name
-                                    else:
-                                        # Пробуем найти регистронезависимо
-                                        for key in self.tools.keys():
-                                            if key.lower() == tool_name.lower():
-                                                tool_found = key
-                                                break
-                                    
-                                    if tool_found:
-                                        logger.info(f"Вызываем инструмент {tool_found} вручную из JSON (запрошен как {tool_name})")
-                                        fn = self.tools[tool_found]
-                                        try:
-                                            obj = fn(**tool_args)
+                                    if tool_name:
+                                        logger.warning(f"Обнаружен JSON с инструментом в res.text (итерация {json_iteration}), но res.tool_calls пустой.")
+                                        logger.warning(f"Инструмент: {tool_name}, аргументы: {tool_args}")
+                                        
+                                        # Если инструмент есть в списке доступных, вызываем его вручную
+                                        # Проверяем регистронезависимо, так как SDK может возвращать lowercase
+                                        tool_found = None
+                                        
+                                        # Сначала пробуем точное совпадение
+                                        if tool_name in self.tools:
+                                            tool_found = tool_name
+                                        else:
+                                            # Пробуем найти регистронезависимо
+                                            for key in self.tools.keys():
+                                                if key.lower() == tool_name.lower():
+                                                    tool_found = key
+                                                    break
+                                        
+                                        if tool_found:
+                                            logger.info(f"Вызываем инструмент {tool_found} вручную из JSON (запрошен как {tool_name})")
+                                            fn = self.tools[tool_found]
                                             try:
-                                                tool_result = obj.process(thread) if hasattr(obj, 'process') else str(obj)
-                                            except Exception as process_e:
+                                                obj = fn(**tool_args)
+                                                try:
+                                                    tool_result = obj.process(thread) if hasattr(obj, 'process') else str(obj)
+                                                except Exception as process_e:
+                                                    # Проверяем, не является ли это CallManagerException
+                                                    from .tools.call_manager_tools import CallManagerException
+                                                    if isinstance(process_e, CallManagerException):
+                                                        # Сохраняем результат CallManager и прекращаем работу агента
+                                                        self._call_manager_result = process_e.escalation_result
+                                                        logger.info(f"CallManager вызван через JSON (исключение в process), прекращаем работу агента {self.agent_name}")
+                                                        # Прерываем обработку - пропускаем дальнейший код в этом блоке
+                                                        raise process_e  # Пробрасываем исключение, чтобы выйти из try блока
+                                                    else:
+                                                        raise  # Пробрасываем другие исключения
+                                                
+                                                # Сохраняем информацию о вызове (выполнится только если CallManager не был вызван)
+                                                self._last_tool_calls.append({
+                                                    "name": tool_found,
+                                                    "args": tool_args,
+                                                    "result": tool_result
+                                                })
+                                                
+                                                # Логируем результаты инструментов перед отправкой в LLM
+                                                tool_result_data = [{"name": tool_found, "content": tool_result}]
+                                                try:
+                                                    llm_logger.log_tool_results(
+                                                        agent_name=self.agent_name,
+                                                        tool_results=tool_result_data
+                                                    )
+                                                except Exception as e:
+                                                    logger.debug(f"Ошибка при логировании результатов инструментов: {e}")
+                                                
+                                                # Когда SDK возвращает инструмент в JSON вместо tool_calls,
+                                                # submit_tool_results не работает, потому что SDK не знает, к какому вызову относится результат.
+                                                # Вместо этого добавляем результат инструмента в thread как сообщение пользователя,
+                                                # а затем запускаем новый run, чтобы агент увидел результат и продолжил работу.
+                                                logger.info(f"Добавляем результат инструмента {tool_found} в thread и запускаем новый run")
+                                                
+                                                # Формируем сообщение с результатом инструмента
+                                                tool_result_message = f"Результат выполнения инструмента {tool_found}:\n{tool_result}"
+                                                
+                                                # Добавляем результат в thread
+                                                thread.write(tool_result_message)
+                                                
+                                                # Запускаем новый run с результатом инструмента в контексте
+                                                run = self.assistant.run(thread)
+                                                logger.debug(f"Запущен новый run после вызова инструмента {tool_found}, run_id: {run.id if hasattr(run, 'id') else 'N/A'}")
+                                                
+                                                # Получаем следующий ответ от агента
+                                                res = run.wait()
+                                                
+                                                # Логируем ответ от LLM после отправки результатов инструментов
+                                                try:
+                                                    res_text = getattr(res, 'text', None) if res else None
+                                                    res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                                                    llm_logger.log_llm_response(
+                                                        agent_name=self.agent_name,
+                                                        response_text=res_text,
+                                                        tool_calls=res_tool_calls if res_tool_calls else None,
+                                                        raw_response=res
+                                                    )
+                                                except Exception as e:
+                                                    logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
+                                                
+                                                # Обновляем res_tool_calls для дальнейшей обработки
+                                                res_tool_calls = getattr(res, 'tool_calls', None)
+                                                logger.debug(f"После вызова инструмента res.tool_calls: {res_tool_calls}")
+                                                
+                                                # Проверяем статус ответа
+                                                res_is_failed = getattr(res, 'is_failed', False)
+                                                if res_is_failed:
+                                                    error_msg = f"Run завершился с ошибкой после вызова инструмента из JSON"
+                                                    logger.error(f"Ошибка в агенте {self.agent_name}: {error_msg}")
+                                                    raise RuntimeError("run is failed and don't have a message result")
+                                                
+                                                # Продолжаем цикл, чтобы проверить, не появился ли новый JSON с инструментом
+                                                # или не появились ли tool_calls
+                                                continue
+                                            except Exception as e:
                                                 # Проверяем, не является ли это CallManagerException
                                                 from .tools.call_manager_tools import CallManagerException
-                                                if isinstance(process_e, CallManagerException):
+                                                if isinstance(e, CallManagerException):
                                                     # Сохраняем результат CallManager и прекращаем работу агента
-                                                    self._call_manager_result = process_e.escalation_result
-                                                    logger.info(f"CallManager вызван через JSON (исключение в process), прекращаем работу агента {self.agent_name}")
-                                                    # Прерываем обработку - пропускаем дальнейший код в этом блоке
-                                                    raise process_e  # Пробрасываем исключение, чтобы выйти из try блока
+                                                    self._call_manager_result = e.escalation_result
+                                                    logger.info(f"CallManager вызван через JSON (исключение), прекращаем работу агента {self.agent_name}")
+                                                    # Выходим из цикла обработки JSON
+                                                    break
                                                 else:
-                                                    raise  # Пробрасываем другие исключения
-                                            
-                                            # Сохраняем информацию о вызове (выполнится только если CallManager не был вызван)
-                                            self._last_tool_calls.append({
-                                                "name": tool_found,
-                                                "args": tool_args,
-                                                "result": tool_result
-                                            })
-                                            
-                                            # Логируем результаты инструментов перед отправкой в LLM
-                                            tool_result_data = [{"name": tool_found, "content": tool_result}]
-                                            try:
-                                                llm_logger.log_tool_results(
-                                                    agent_name=self.agent_name,
-                                                    tool_results=tool_result_data
-                                                )
-                                            except Exception as e:
-                                                logger.debug(f"Ошибка при логировании результатов инструментов: {e}")
-                                            
-                                            # Отправляем результат обратно в run
-                                            run.submit_tool_results(tool_result_data)
-                                            
-                                            # Получаем следующий ответ от агента
-                                            res = run.wait()
-                                            
-                                            # Логируем ответ от LLM после отправки результатов инструментов
-                                            try:
-                                                res_text = getattr(res, 'text', None) if res else None
-                                                res_tool_calls = getattr(res, 'tool_calls', None) if res else None
-                                                llm_logger.log_llm_response(
-                                                    agent_name=self.agent_name,
-                                                    response_text=res_text,
-                                                    tool_calls=res_tool_calls if res_tool_calls else None,
-                                                    raw_response=res
-                                                )
-                                            except Exception as e:
-                                                logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
-                                            
-                                            # Обновляем res_tool_calls для дальнейшей обработки
-                                            res_tool_calls = getattr(res, 'tool_calls', None)
-                                            logger.debug(f"После вызова инструмента res.tool_calls: {res_tool_calls}")
-                                            
-                                            # Проверяем, что res.text теперь содержит нормальный ответ, а не JSON
-                                            try:
-                                                new_res_text = getattr(res, 'text', None) if res else None
-                                                if new_res_text:
-                                                    # Проверяем, не является ли ответ все еще JSON с инструментом
-                                                    try:
-                                                        parsed_check = json.loads(new_res_text)
-                                                        if isinstance(parsed_check, dict) and 'tool' in parsed_check:
-                                                            logger.warning(f"После вызова инструмента res.text все еще содержит JSON с инструментом. Делаем еще один wait()...")
-                                                            # Делаем еще один wait() чтобы получить финальный ответ
-                                                            res = run.wait()
-                                                            res_tool_calls = getattr(res, 'tool_calls', None)
-                                                            logger.debug(f"После дополнительного wait() res.tool_calls: {res_tool_calls}")
-                                                    except (json.JSONDecodeError, ValueError):
-                                                        # Это нормальный ответ, не JSON - все хорошо
-                                                        pass
-                                            except Exception as e:
-                                                logger.debug(f"Ошибка при проверке res.text после вызова инструмента: {e}")
-                                        except Exception as e:
-                                            # Проверяем, не является ли это CallManagerException
-                                            from .tools.call_manager_tools import CallManagerException
-                                            if isinstance(e, CallManagerException):
-                                                # Сохраняем результат CallManager и прекращаем работу агента
-                                                self._call_manager_result = e.escalation_result
-                                                logger.info(f"CallManager вызван через JSON (исключение), прекращаем работу агента {self.agent_name}")
-                                                # Флаг установлен, проверка произойдет позже на строке 531
-                                                pass
-                                            else:
-                                                logger.error(f"Ошибка при вызове инструмента {tool_name}: {e}")
-                                                # Продолжаем обработку, возможно агент сам обработает ошибку
+                                                    logger.error(f"Ошибка при вызове инструмента {tool_name}: {e}")
+                                                    # Продолжаем обработку, возможно агент сам обработает ошибку
+                                                    break
+                                        else:
+                                            logger.error(f"Инструмент {tool_name} не найден в списке доступных инструментов")
+                                            # Не возвращаем этот JSON, продолжаем обработку
+                                            break
+                                    else:
+                                        # Это не JSON с инструментом, выходим из цикла
+                                        break
                                 else:
-                                    logger.error(f"Инструмент {tool_name} не найден в списке доступных инструментов")
-                                    # Не возвращаем этот JSON, продолжаем обработку
-                                    # Попробуем получить tool_calls из других источников или продолжить run
-                                    logger.debug("Попытка продолжить run для получения финального ответа...")
-                                    res = run.wait()
-                                    res_tool_calls = getattr(res, 'tool_calls', None)
-                                    logger.debug(f"После повторного wait() res.tool_calls: {res_tool_calls}")
-                        except (json.JSONDecodeError, ValueError):
-                            # Это не JSON, продолжаем нормальную обработку
-                            pass
-                except Exception as e:
-                    logger.debug(f"Ошибка при проверке res.text на JSON: {e}")
+                                    # Это не словарь, выходим из цикла
+                                    break
+                            except (json.JSONDecodeError, ValueError):
+                                # Это не JSON, выходим из цикла и продолжаем нормальную обработку
+                                break
+                        else:
+                            # res.text пустой, выходим из цикла
+                            break
+                    except Exception as e:
+                        logger.debug(f"Ошибка при проверке res.text на JSON: {e}")
+                        break
+                else:
+                    # res_tool_calls не пустой, выходим из цикла обработки JSON
+                    # Дальше будет обработан в основном цикле обработки tool_calls
+                    break
+            
+            if json_iteration >= max_json_iterations:
+                logger.warning(f"Достигнуто максимальное количество итераций обработки JSON с инструментами: {max_json_iterations}")
             
             # Проверяем, был ли вызван CallManager в блоке обработки JSON
             if self._call_manager_result is not None:

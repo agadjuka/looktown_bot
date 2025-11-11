@@ -100,3 +100,5 @@ class RescheduleBooking(BaseModel):
             return f"Ошибка при переносе записи: {str(e)}"
 
 
+
+

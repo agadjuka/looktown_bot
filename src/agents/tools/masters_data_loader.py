@@ -1,5 +1,5 @@
 """
-Сервис для чтения данных о салоне
+Сервис для чтения данных о мастерах
 Поддерживает чтение из файла проекта и из облачного хранилища
 """
 import os
@@ -9,23 +9,23 @@ from typing import Dict, Optional
 from functools import lru_cache
 
 
-class AboutSalonDataLoader:
-    """Загрузчик данных о салоне с поддержкой разных источников"""
+class MastersDataLoader:
+    """Загрузчик данных о мастерах с поддержкой разных источников"""
     
     def __init__(self):
         """Инициализация загрузчика"""
-        self.data_source = os.getenv('ABOUT_SALON_DATA_SOURCE', 'file')  # 'file' или 'storage'
-        self.file_path = os.getenv('ABOUT_SALON_FILE_PATH', 'about_salon.json')
+        self.data_source = os.getenv('MASTERS_DATA_SOURCE', 'file')  # 'file' или 'storage'
+        self.file_path = os.getenv('MASTERS_FILE_PATH', 'masters.json')
         self.storage_bucket = os.getenv('YC_BUCKET_NAME')
-        self.storage_path = os.getenv('ABOUT_SALON_STORAGE_PATH', 'about_salon.json')
+        self.storage_path = os.getenv('MASTERS_STORAGE_PATH', 'masters.json')
     
     @lru_cache(maxsize=1)
     def load_data(self) -> Dict:
         """
-        Загрузка данных о салоне
+        Загрузка данных о мастерах
         
         Returns:
-            Словарь с данными о салоне
+            Словарь с данными о мастерах
             
         Raises:
             FileNotFoundError: если файл не найден
@@ -76,7 +76,7 @@ class AboutSalonDataLoader:
 
 
 # Глобальный экземпляр загрузчика
-_about_salon_data_loader = AboutSalonDataLoader()
+_masters_data_loader = MastersDataLoader()
 
 
 

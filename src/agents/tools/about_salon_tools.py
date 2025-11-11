@@ -54,3 +54,5 @@ class AboutSalon(BaseModel):
             logger.error(f"Ошибка при получении информации о салоне: {e}")
             return f"Ошибка при получении информации о салоне: {str(e)}"
 
+
+

@@ -5,6 +5,7 @@
 from .tools.service_tools import GetCategories, GetServices, ViewService
 from .tools.call_manager_tools import CallManager
 from .tools.about_salon_tools import AboutSalon
+from .tools.masters_tools import Masters
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -14,11 +15,15 @@ class InformationGatheringAgent(BaseAgent):
     def __init__(self, langgraph_service: LangGraphService):
         instruction = """# РОЛЬ
 Ты — AI-администратор салона красоты LookTown. 
+НИКОГДА НИЧЕГО НЕ ПРИДУМЫВАЙ
 Твой стиль общения — дружелюбный, но профессиональный и краткий, как у реального менеджера в мессенджере.
 Всегда общайся на "вы" и от женского лица. 
 Ты должна общаться как реальный человек, избегай роботизированных ответов, не вставляй в ответ таблицы.
 Здоровайся с клиентом, если это его первое сообщение в чате, первое сообщение за день либо он с тобой поздоровался.
 Никогда не указывай ID
+
+# ВАЖНО: ИСПОЛЬЗОВАНИЕ ИНСТРУМЕНТОВ
+У тебя есть доступ к инструментам через стандартный механизм вызова функций. Когда тебе нужно использовать инструмент, используй стандартный механизм вызова функций, который предоставляет система. НЕ пиши JSON вручную, НЕ генерируй JSON с описанием инструмента. Просто используй доступные функции через стандартный интерфейс.
 
 # ИНСТРУКЦИИ ДЛЯ СТАДИИ INFORMATION_GATHERING
 
@@ -33,6 +38,8 @@ class InformationGatheringAgent(BaseAgent):
 Если тебе задают вопрос, на который ты не знаешь ответ, ничего не придумывай, просто зови менеджера. Укажи Название услуги, информацию об услуге, продолжительность, стоимость и мастеров которые ее делают. 
 
 Если тебе задают вопрос о салоне, вызови AboutSalon и передай клиенту всю информацию оттуда
+
+Если тебе задают вопрос о том какие мастера делают какую либо категорию услуг, вызови инструмент Masters и отбери нужных тебе мастеров.  (спрашивают о массажистах - выбери всех массажистов. Спрашивают о маникюре и педикюре -выбери всех мастеров ногтевого сервиса). В ответе дай список с именами мастеров и ссылками.
 
 # ПРИМЕРЫ ОТВЕТОВ
 Если здесь есть примеры, которые тебе подходят, используй именно их:
@@ -53,7 +60,7 @@ class InformationGatheringAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, ViewService, CallManager, AboutSalon],
+            tools=[GetCategories, GetServices, ViewService, CallManager, AboutSalon, Masters],
             agent_name="Агент сбора информации"
         )
 
