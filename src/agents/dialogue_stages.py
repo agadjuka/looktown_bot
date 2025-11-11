@@ -10,8 +10,6 @@ class DialogueStage(str, Enum):
     GREETING = "greeting"                      # Приветствие, начало диалога
     INFORMATION_GATHERING = "information_gathering"  # Сбор информации об услугах, ценах, мастерах
     BOOKING = "booking"                        # Бронирование услуги
-    BOOKING_TO_MASTER = "booking_to_master"   # Бронирование к конкретному мастеру
-    FIND_WINDOW = "find_window"               # Поиск свободного окна
-    CANCELLATION_REQUEST = "cancellation_request"  # Запрос на отмену записи
+    BOOKING_TO_MASTER = "booking_to_master"   # Бронирование к конкретному мастеру    CANCELLATION_REQUEST = "cancellation_request"  # Запрос на отмену записи
     RESCHEDULE = "reschedule"                 # Перенос записи
     VIEW_MY_BOOKING = "view_my_booking"        # Просмотр своих записей

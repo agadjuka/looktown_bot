@@ -304,7 +304,6 @@ if user_input:
                         "GreetingAgent": getattr(st.session_state.booking_graph, 'greeting_agent', None),
                         "BookingAgent": getattr(st.session_state.booking_graph, 'booking_agent', None),
                         "BookingToMasterAgent": getattr(st.session_state.booking_graph, 'booking_to_master_agent', None),
-                        "FindWindowAgent": getattr(st.session_state.booking_graph, 'find_window_agent', None),
                         "CancelBookingAgent": getattr(st.session_state.booking_graph, 'cancel_agent', None),
                         "RescheduleAgent": getattr(st.session_state.booking_graph, 'reschedule_agent', None),
                         "ViewMyBookingAgent": getattr(st.session_state.booking_graph, 'view_my_booking_agent', None),

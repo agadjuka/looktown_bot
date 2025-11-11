@@ -11,7 +11,7 @@ from ..agents.cancel_booking_agent import CancelBookingAgent
 from ..agents.reschedule_agent import RescheduleAgent
 from ..agents.greeting_agent import GreetingAgent
 from ..agents.information_gathering_agent import InformationGatheringAgent
-from ..agents.find_window_agent import FindWindowAgent
+
 from ..agents.view_my_booking_agent import ViewMyBookingAgent
 
 
@@ -46,7 +46,6 @@ class BookingGraph:
                 'information_gathering': InformationGatheringAgent(langgraph_service),
                 'booking': BookingAgent(langgraph_service),
                 'booking_to_master': BookingToMasterAgent(langgraph_service),
-                'find_window': FindWindowAgent(langgraph_service),
                 'cancellation_request': CancelBookingAgent(langgraph_service),
                 'reschedule': RescheduleAgent(langgraph_service),
                 'view_my_booking': ViewMyBookingAgent(langgraph_service),
@@ -59,7 +58,6 @@ class BookingGraph:
         self.information_gathering_agent = agents['information_gathering']
         self.booking_agent = agents['booking']
         self.booking_to_master_agent = agents['booking_to_master']
-        self.find_window_agent = agents['find_window']
         self.cancel_agent = agents['cancellation_request']
         self.reschedule_agent = agents['reschedule']
         self.view_my_booking_agent = agents['view_my_booking']
@@ -78,7 +76,6 @@ class BookingGraph:
         graph.add_node("handle_information_gathering", self._handle_information_gathering)
         graph.add_node("handle_booking", self._handle_booking)
         graph.add_node("handle_booking_to_master", self._handle_booking_to_master)
-        graph.add_node("handle_find_window", self._handle_find_window)
         graph.add_node("handle_cancellation_request", self._handle_cancellation_request)
         graph.add_node("handle_reschedule", self._handle_reschedule)
         graph.add_node("handle_view_my_booking", self._handle_view_my_booking)
@@ -92,7 +89,6 @@ class BookingGraph:
                 "information_gathering": "handle_information_gathering",
                 "booking": "handle_booking",
                 "booking_to_master": "handle_booking_to_master",
-                "find_window": "handle_find_window",
                 "cancellation_request": "handle_cancellation_request",
                 "reschedule": "handle_reschedule",
                 "view_my_booking": "handle_view_my_booking",
@@ -103,7 +99,6 @@ class BookingGraph:
         graph.add_edge("handle_information_gathering", END)
         graph.add_edge("handle_booking", END)
         graph.add_edge("handle_booking_to_master", END)
-        graph.add_edge("handle_find_window", END)
         graph.add_edge("handle_cancellation_request", END)
         graph.add_edge("handle_reschedule", END)
         graph.add_edge("handle_view_my_booking", END)
@@ -143,7 +138,7 @@ class BookingGraph:
     
     def _route_after_detect(self, state: BookingState) -> Literal[
         "greeting", "information_gathering", "booking", "booking_to_master",
-        "find_window", "cancellation_request", "reschedule", "view_my_booking", "end"
+        "cancellation_request", "reschedule", "view_my_booking", "end"
     ]:
         """Маршрутизация после определения стадии"""
         # Если CallManager был вызван, завершаем граф
@@ -158,7 +153,7 @@ class BookingGraph:
         # Валидация стадии
         valid_stages = [
             "greeting", "information_gathering", "booking", "booking_to_master",
-            "find_window", "cancellation_request", "reschedule", "view_my_booking"
+            "cancellation_request", "reschedule", "view_my_booking"
         ]
         
         if stage not in valid_stages:
@@ -244,16 +239,6 @@ class BookingGraph:
         
         answer = self.booking_to_master_agent(message, thread)
         return self._process_agent_result(self.booking_to_master_agent, answer, state, "BookingToMasterAgent")
-    
-    def _handle_find_window(self, state: BookingState) -> BookingState:
-        """Обработка поиска окна"""
-        logger.info("Обработка поиска окна")
-        self._prepare_thread_for_agent(state)
-        message = state["message"]
-        thread = state["thread"]
-        
-        answer = self.find_window_agent(message, thread)
-        return self._process_agent_result(self.find_window_agent, answer, state, "FindWindowAgent")
     
     def _handle_cancellation_request(self, state: BookingState) -> BookingState:
         """Обработка отмены"""
