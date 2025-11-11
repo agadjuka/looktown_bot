@@ -98,3 +98,4 @@ async def reschedule_booking_logic(
             "error": f"Ошибка при переносе записи: {str(e)}"
         }
 
+

@@ -99,3 +99,4 @@ class RescheduleBooking(BaseModel):
             logger.error(f"Ошибка при переносе записи: {e}", exc_info=True)
             return f"Ошибка при переносе записи: {str(e)}"
 
+
