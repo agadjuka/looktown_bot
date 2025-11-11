@@ -7,6 +7,7 @@ from .service_tools import (
     BookTimes,
     CreateBooking
 )
+from .client_records_tools import GetClientRecords
 
 __all__ = [
     # Инструменты каталога услуг
@@ -15,6 +16,8 @@ __all__ = [
     # Инструменты бронирования
     "BookTimes",
     "CreateBooking",
+    # Инструменты для работы с записями клиентов
+    "GetClientRecords",
 ]
 
 

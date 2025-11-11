@@ -155,11 +155,13 @@ def register_all_agents(force: bool = False):
                     logger.info(f"Найдены инструменты в агенте: {agent['tools']}")
                     try:
                         from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking
+                        from src.agents.tools.client_records_tools import GetClientRecords
                         tool_mapping = {
                             'GetCategories': GetCategories,
                             'GetServices': GetServices,
                             'BookTimes': BookTimes,
-                            'CreateBooking': CreateBooking
+                            'CreateBooking': CreateBooking,
+                            'GetClientRecords': GetClientRecords
                         }
                         tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
                         if tools_classes:

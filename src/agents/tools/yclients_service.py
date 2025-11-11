@@ -216,4 +216,136 @@ class YclientsService:
                         "error": response_text[:1000],
                         "status_code": response.status
                     }
+    
+    async def find_client_by_phone(self, phone: str) -> Optional[Dict[str, Any]]:
+        """
+        Найти клиента по номеру телефона
+        
+        Args:
+            phone: Номер телефона клиента
+            
+        Returns:
+            Optional[Dict]: Информация о клиенте (id, name, phone) или None, если не найден
+        """
+        url = f"{self.BASE_URL}/company/{self.company_id}/clients/search"
+        headers = {
+            "Accept": "application/vnd.yclients.v2+json",
+            "Authorization": self.auth_header,
+            "Content-Type": "application/json"
+        }
+        
+        PAGE_SIZE = 200
+        MAX_PAGES = 100
+        page = 1
+        
+        # Нормализуем телефон для сравнения (берем последние 10 цифр)
+        def extract_digits(s: str) -> str:
+            return ''.join(filter(str.isdigit, str(s or '')))
+        
+        def same_phone(needle: str, hay: str) -> bool:
+            n = extract_digits(needle)[-10:]
+            h = extract_digits(hay)[-10:]
+            return n and h and n == h
+        
+        async with aiohttp.ClientSession() as session:
+            while page <= MAX_PAGES:
+                req_body = {
+                    "page": page,
+                    "page_size": PAGE_SIZE,
+                    "fields": ["id", "name", "phone", "email"]
+                }
+                
+                async with session.post(url, headers=headers, json=req_body) as response:
+                    if not response.ok:
+                        response_text = await response.text()
+                        raise aiohttp.ClientResponseError(
+                            request_info=response.request_info,
+                            history=response.history,
+                            status=response.status,
+                            message=f"HTTP {response.status}: {response_text[:200]}"
+                        )
+                    
+                    json_data = await response.json()
+                    clients_list = json_data.get('data', [])
+                    
+                    if not isinstance(clients_list, list):
+                        clients_list = []
+                    
+                    # Ищем клиента по телефону
+                    for client in clients_list:
+                        if same_phone(phone, client.get('phone', '')):
+                            return {
+                                "id": client.get('id'),
+                                "name": client.get('name'),
+                                "phone": client.get('phone')
+                            }
+                    
+                    # Проверяем, есть ли еще страницы
+                    total = json_data.get('meta', {}).get('total_count', 0)
+                    if len(clients_list) < PAGE_SIZE:
+                        break
+                    if total and page * PAGE_SIZE >= total:
+                        break
+                    
+                    page += 1
+        
+        return None
+    
+    async def get_client_records(self, client_id: int, count: int = 50) -> List[Dict[str, Any]]:
+        """
+        Получить все записи клиента по его ID
+        
+        Args:
+            client_id: ID клиента
+            count: Максимальное количество записей для получения (по умолчанию 50)
+            
+        Returns:
+            List[Dict]: Список записей клиента
+        """
+        url = f"{self.BASE_URL}/records/{self.company_id}"
+        headers = {
+            "Accept": "application/vnd.yclients.v2+json",
+            "Authorization": self.auth_header
+        }
+        
+        params = {
+            "client_id": str(client_id),
+            "count": str(count)
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, params=params) as response:
+                response.raise_for_status()
+                response_data = await response.json()
+                
+                # API возвращает данные в поле 'data'
+                records_list = response_data.get('data', [])
+                if not isinstance(records_list, list):
+                    records_list = []
+                
+                # Форматируем записи для удобства
+                formatted_records = []
+                for record in records_list:
+                    # Берем первую услугу из массива (если их несколько)
+                    service = None
+                    if isinstance(record.get('services'), list) and len(record.get('services', [])) > 0:
+                        service = record['services'][0]
+                    
+                    formatted_record = {
+                        "record_id": record.get('id'),
+                        "client_id": record.get('client', {}).get('id') if isinstance(record.get('client'), dict) else None,
+                        "client_name": (
+                            record.get('client', {}).get('display_name') or 
+                            record.get('client', {}).get('name') if isinstance(record.get('client'), dict) else None
+                        ),
+                        "service_title": service.get('title') if service else None,
+                        "service_id": service.get('id') if service else None,
+                        "staff_name": record.get('staff', {}).get('name') if isinstance(record.get('staff'), dict) else None,
+                        "staff_id": record.get('staff', {}).get('id') if isinstance(record.get('staff'), dict) else None,
+                        "phone": record.get('client', {}).get('phone') if isinstance(record.get('client'), dict) else None,
+                        "datetime": record.get('datetime') or record.get('date')
+                    }
+                    formatted_records.append(formatted_record)
+                
+                return formatted_records
 

@@ -829,22 +829,32 @@ class {class_name}(BaseAgent):
             return False
     
     def load_tool_classes(self) -> Dict[str, type]:
-        """Динамически загрузить все классы инструментов из модуля service_tools"""
+        """Динамически загрузить все классы инструментов из всех модулей в пакете tools"""
         try:
-            # Импортируем модуль service_tools
-            from src.agents.tools import service_tools
+            import importlib
+            import pkgutil
+            from src.agents import tools as tools_package
             
             tool_classes = {}
             
-            # Проходим по всем атрибутам модуля
-            for name, obj in inspect.getmembers(service_tools):
-                # Проверяем, что это класс, наследуется от BaseModel и имеет метод process
-                if (inspect.isclass(obj) and 
-                    issubclass(obj, BaseModel) and 
-                    obj != BaseModel and
-                    hasattr(obj, 'process') and
-                    callable(getattr(obj, 'process'))):
-                    tool_classes[name] = obj
+            # Проходим по всем модулям в пакете tools
+            for importer, modname, ispkg in pkgutil.iter_modules(tools_package.__path__, tools_package.__name__ + "."):
+                if not ispkg:  # Пропускаем подпакеты, только модули
+                    try:
+                        module = importlib.import_module(modname)
+                        # Проходим по всем атрибутам модуля
+                        for name, obj in inspect.getmembers(module):
+                            # Проверяем, что это класс, наследуется от BaseModel и имеет метод process
+                            if (inspect.isclass(obj) and 
+                                issubclass(obj, BaseModel) and 
+                                obj != BaseModel and
+                                hasattr(obj, 'process') and
+                                callable(getattr(obj, 'process'))):
+                                tool_classes[name] = obj
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Не удалось загрузить модуль {modname}: {e}")
             
             return tool_classes
         except Exception as e:

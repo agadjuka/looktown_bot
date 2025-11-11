@@ -126,23 +126,14 @@ class ToolLoader:
         return module
     
     def load_all_tools(self) -> Dict[str, ToolInfo]:
-        """Загружает все инструменты используя прямой импорт из файла, минуя пакетную структуру"""
+        """Загружает все инструменты из всех модулей в папке tools"""
         self.tools = {}
         errors = []
         
         # Создаем фиктивные пакеты ПЕРЕД загрузкой модулей
         self._create_fake_packages()
         
-        # Загружаем зависимости ПЕРЕД основным модулем
-        service_tools_path = self.tools_dir / "service_tools.py"
-        
-        if not service_tools_path.exists():
-            error_msg = f"Файл не найден: {service_tools_path}"
-            errors.append(error_msg)
-            self.errors = errors
-            return self.tools
-        
-        # Загружаем зависимости в правильном порядке
+        # Загружаем зависимости ПЕРЕД основными модулями
         dependencies = [
             ('services_data_loader.py', 'src.agents.tools.services_data_loader'),
             ('yclients_service.py', 'src.agents.tools.yclients_service'),
@@ -151,6 +142,7 @@ class ToolLoader:
             ('create_booking_logic.py', 'src.agents.tools.create_booking_logic'),
             ('service_master_mapper.py', 'src.agents.tools.service_master_mapper'),
             ('find_master_by_service_logic.py', 'src.agents.tools.find_master_by_service_logic'),
+            ('client_records_logic.py', 'src.agents.tools.client_records_logic'),
         ]
         
         for dep_file, dep_module_name in dependencies:
@@ -161,84 +153,96 @@ class ToolLoader:
                 except Exception as e:
                     print(f"⚠️ Предупреждение: не удалось загрузить {dep_file}: {e}")
         
-        try:
-            # Теперь загружаем основной модуль
-            spec = importlib.util.spec_from_file_location(
-                "src.agents.tools.service_tools",
-                service_tools_path
-            )
+        # Список модулей с инструментами (файлы, которые содержат классы инструментов)
+        tool_modules = [
+            'service_tools.py',
+            'client_records_tools.py',
+        ]
+        
+        loaded_count = 0
+        
+        for module_file in tool_modules:
+            module_path = self.tools_dir / module_file
             
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Не удалось создать spec для {service_tools_path}")
+            if not module_path.exists():
+                print(f"⚠️ Файл {module_file} не найден, пропускаем")
+                continue
             
-            # Создаем модуль
-            module = importlib.util.module_from_spec(spec)
-            module.__package__ = 'src.agents.tools'
-            module.__name__ = 'src.agents.tools.service_tools'
-            
-            # Добавляем в sys.modules перед выполнением
-            sys.modules['src.agents.tools.service_tools'] = module
-            
-            # Выполняем модуль
-            spec.loader.exec_module(module)
-            
-            # Теперь импортируем классы инструментов
-            GetCategories = getattr(module, 'GetCategories')
-            GetServices = getattr(module, 'GetServices')
-            BookTimes = getattr(module, 'BookTimes')
-            CreateBooking = getattr(module, 'CreateBooking')
-            FindMasterByService = getattr(module, 'FindMasterByService')
-            
-            tool_classes = [
-                ('GetCategories', GetCategories),
-                ('GetServices', GetServices),
-                ('BookTimes', BookTimes),
-                ('CreateBooking', CreateBooking),
-                ('FindMasterByService', FindMasterByService)
-            ]
-            
-            loaded_count = 0
-            for tool_name, tool_class in tool_classes:
-                try:
-                    if not inspect.isclass(tool_class):
-                        errors.append(f"{tool_name}: не является классом")
-                        continue
-                    
-                    if not issubclass(tool_class, BaseModel):
-                        errors.append(f"{tool_name}: не является подклассом BaseModel")
-                        continue
-                    
-                    if not hasattr(tool_class, 'process'):
-                        errors.append(f"{tool_name}: класс не имеет метод process")
-                        continue
-                    
-                    # Создаем ToolInfo
-                    tool_info = ToolInfo(tool_class)
-                    self.tools[tool_info.name] = tool_info
-                    loaded_count += 1
-                    
-                except Exception as e:
-                    error_msg = f"{tool_name}: {str(e)}"
-                    errors.append(error_msg)
-                    print(f"❌ Ошибка при загрузке {tool_name}: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            if loaded_count > 0:
-                print(f"✅ Загружено {loaded_count} инструментов")
+            try:
+                # Формируем имя модуля
+                module_name = f"src.agents.tools.{module_path.stem}"
                 
-        except ImportError as e:
-            error_msg = f"Ошибка импорта инструментов: {e}"
-            errors.append(error_msg)
-            print(f"❌ {error_msg}")
-            import traceback
-            traceback.print_exc()
-        except Exception as e:
-            error_msg = f"Критическая ошибка при загрузке инструментов: {e}"
-            errors.append(error_msg)
-            print(f"❌ {error_msg}")
-            import traceback
-            traceback.print_exc()
+                # Загружаем модуль
+                spec = importlib.util.spec_from_file_location(module_name, module_path)
+                
+                if spec is None or spec.loader is None:
+                    error_msg = f"Не удалось создать spec для {module_path}"
+                    errors.append(error_msg)
+                    print(f"❌ {error_msg}")
+                    continue
+                
+                # Создаем модуль
+                module = importlib.util.module_from_spec(spec)
+                module.__package__ = 'src.agents.tools'
+                module.__name__ = module_name
+                
+                # Добавляем в sys.modules перед выполнением
+                sys.modules[module_name] = module
+                
+                # Выполняем модуль
+                spec.loader.exec_module(module)
+                
+                # Ищем все классы инструментов в модуле
+                for name, obj in inspect.getmembers(module):
+                    # Проверяем, что это класс, наследуется от BaseModel и имеет метод process
+                    if (inspect.isclass(obj) and 
+                        issubclass(obj, BaseModel) and 
+                        obj != BaseModel and
+                        hasattr(obj, 'process') and
+                        callable(getattr(obj, 'process'))):
+                        
+                        try:
+                            # Проверяем, что это действительно инструмент
+                            if not inspect.isclass(obj):
+                                errors.append(f"{name}: не является классом")
+                                continue
+                            
+                            if not issubclass(obj, BaseModel):
+                                errors.append(f"{name}: не является подклассом BaseModel")
+                                continue
+                            
+                            if not hasattr(obj, 'process'):
+                                errors.append(f"{name}: класс не имеет метод process")
+                                continue
+                            
+                            # Создаем ToolInfo
+                            tool_info = ToolInfo(obj)
+                            self.tools[tool_info.name] = tool_info
+                            loaded_count += 1
+                            print(f"✅ Загружен инструмент: {name}")
+                            
+                        except Exception as e:
+                            error_msg = f"{name}: {str(e)}"
+                            errors.append(error_msg)
+                            print(f"❌ Ошибка при загрузке {name}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                
+            except ImportError as e:
+                error_msg = f"Ошибка импорта модуля {module_file}: {e}"
+                errors.append(error_msg)
+                print(f"❌ {error_msg}")
+                import traceback
+                traceback.print_exc()
+            except Exception as e:
+                error_msg = f"Критическая ошибка при загрузке модуля {module_file}: {e}"
+                errors.append(error_msg)
+                print(f"❌ {error_msg}")
+                import traceback
+                traceback.print_exc()
+        
+        if loaded_count > 0:
+            print(f"✅ Загружено {loaded_count} инструментов из {len(tool_modules)} модулей")
         
         if errors:
             self.errors = errors

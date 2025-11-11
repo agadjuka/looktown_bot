@@ -1,6 +1,7 @@
 """
 Агент для просмотра записей клиента
 """
+from .tools.client_records_tools import GetClientRecords
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -10,6 +11,7 @@ class ViewMyBookingAgent(BaseAgent):
     
     def __init__(self, langgraph_service: LangGraphService):
         instruction = """# РОЛЬ
+# РОЛЬ
 Ты — AI-администратор салона красоты LookTown. 
 Твой стиль общения — дружелюбный, но профессиональный и краткий, как у реального менеджера в мессенджере.
 Всегда общайся на "вы" и от женского лица. 
@@ -18,7 +20,9 @@ class ViewMyBookingAgent(BaseAgent):
 
 # ИНСТРУКЦИИ ДЛЯ СТАДИИ VIEW_MY_BOOKING
 
-Предоставь информацию клиенту о том, какие записи у него есть. Не предлагай отменить или перенести запись.  Просто дай информацию.
+Предоставь информацию клиенту о том, какие записи у него есть. Используй GetClientRecords. Для использования уточни номер телефона клиента если не знаешь его из истории переписки
+Не предлагай отменить или перенести запись.  Просто дай информацию.
+
 Не вставляй {Имя клиента} если ты не знаешь настоящего имени клиента.
 Если тебе задают вопрос, на который ты не знаешь ответ, ничего не придумывай, просто зови менеджера.
 
@@ -39,7 +43,7 @@ class ViewMyBookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None,
+            tools=[GetClientRecords],
             agent_name="Агент просмотра записей"
         )
 
