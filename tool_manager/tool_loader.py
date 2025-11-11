@@ -149,6 +149,8 @@ class ToolLoader:
             ('book_times_logic.py', 'src.agents.tools.book_times_logic'),
             ('phone_utils.py', 'src.agents.tools.phone_utils'),
             ('create_booking_logic.py', 'src.agents.tools.create_booking_logic'),
+            ('service_master_mapper.py', 'src.agents.tools.service_master_mapper'),
+            ('find_master_by_service_logic.py', 'src.agents.tools.find_master_by_service_logic'),
         ]
         
         for dep_file, dep_module_name in dependencies:
@@ -185,12 +187,14 @@ class ToolLoader:
             GetServices = getattr(module, 'GetServices')
             BookTimes = getattr(module, 'BookTimes')
             CreateBooking = getattr(module, 'CreateBooking')
+            FindMasterByService = getattr(module, 'FindMasterByService')
             
             tool_classes = [
                 ('GetCategories', GetCategories),
                 ('GetServices', GetServices),
                 ('BookTimes', BookTimes),
-                ('CreateBooking', CreateBooking)
+                ('CreateBooking', CreateBooking),
+                ('FindMasterByService', FindMasterByService)
             ]
             
             loaded_count = 0

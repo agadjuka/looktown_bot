@@ -8,6 +8,8 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import importlib.util
 import sys
+import inspect
+from pydantic import BaseModel
 
 class StageManager:
     """Менеджер для работы со стадиями (агентами)"""
@@ -23,8 +25,6 @@ class StageManager:
         self.graph_file = self.project_root / "src" / "graph" / "booking_graph.py"
         self.dialogue_stages_file = self.project_root / "src" / "agents" / "dialogue_stages.py"
         self.stage_detector_file = self.project_root / "src" / "agents" / "stage_detector_agent.py"
-        self.stage_detector_template_file = self.project_root / "src" / "agents" / "stage_detector_prompt_template.txt"
-        self.stage_descriptions_file = self.project_root / "src" / "agents" / "stage_descriptions.json"
     
     def get_all_stages(self) -> List[Dict]:
         """Получить все стадии (агенты)"""
@@ -69,16 +69,12 @@ class StageManager:
             agent_name_match = re.search(r'agent_name\s*=\s*["\']([^"\']+)["\']', content)
             agent_name = agent_name_match.group(1) if agent_name_match else class_name
             
-            # Определяем используемые инструменты
+            # Определяем используемые инструменты (динамически)
+            available_tools = self.get_available_tools()
             tools = []
-            if 'GetCategories' in content:
-                tools.append('GetCategories')
-            if 'GetServices' in content:
-                tools.append('GetServices')
-            if 'BookTimes' in content:
-                tools.append('BookTimes')
-            if 'CreateBooking' in content:
-                tools.append('CreateBooking')
+            for tool_name in available_tools:
+                if tool_name in content:
+                    tools.append(tool_name)
             
             # Определяем стадию из имени файла (ключ стадии)
             stage = self._extract_stage_from_file(file_path)
@@ -145,24 +141,108 @@ class StageManager:
                 return False
             
             with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+                lines = f.readlines()
             
-            # Заменяем промпт
-            pattern = r'(instruction\s*=\s*""").*?(""")'
-            replacement = r'\1' + new_instruction + r'\2'
-            new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+            # Ищем строку с instruction = """
+            instruction_start_idx = None
+            instruction_end_idx = None
             
-            if new_content == content:
-                # Если не нашлось, пробуем другой паттерн
+            for i, line in enumerate(lines):
+                # Ищем строку вида: instruction = """ или instruction=""" 
+                if re.search(r'instruction\s*=\s*"""', line):
+                    instruction_start_idx = i
+                    # Проверяем, не закрыта ли кавычка на той же строке
+                    if line.count('"""') >= 2:
+                        # Закрыта на той же строке (однострочный промпт)
+                        instruction_end_idx = i
+                    else:
+                        # Ищем закрывающую тройную кавычку на отдельной строке
+                        for j in range(i + 1, len(lines)):
+                            if '"""' in lines[j]:
+                                instruction_end_idx = j
+                                break
+                    break
+            
+            if instruction_start_idx is None or instruction_end_idx is None:
+                # Fallback на старый метод, если не нашли точные границы
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Экранируем специальные символы в new_instruction для regex
+                escaped_instruction = re.escape(new_instruction)
+                # Но нам нужны не экранированные, а просто замена содержимого
                 pattern = r'(instruction\s*=\s*""").*?(""")'
-                new_content = re.sub(pattern, replacement, content, flags=re.DOTALL | re.MULTILINE)
+                replacement = r'\1' + new_instruction + r'\2'
+                new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+                
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.write(new_content)
+            else:
+                # Безопасная замена: сохраняем всё до instruction, вставляем новый промпт, сохраняем всё после
+                new_lines = []
+                
+                if instruction_start_idx == instruction_end_idx:
+                    # Однострочный промпт - закрывающая кавычка на той же строке
+                    start_line = lines[instruction_start_idx]
+                    # Разделяем строку на части: до """ и после """
+                    parts = start_line.split('"""', 2)
+                    if len(parts) >= 3:
+                        # parts[0] - до первой """, parts[1] - старый промпт, parts[2] - после второй """
+                        new_line = parts[0] + '"""' + new_instruction + '"""' + parts[2]
+                        new_lines.extend(lines[:instruction_start_idx])
+                        new_lines.append(new_line)
+                        new_lines.extend(lines[instruction_start_idx + 1:])
+                    else:
+                        # Не удалось разделить - используем fallback
+                        raise ValueError("Не удалось обработать однострочный промпт")
+                else:
+                    # Многострочный промпт
+                    # Добавляем строки до instruction (включая строку с instruction = """)
+                    new_lines.extend(lines[:instruction_start_idx + 1])
+                    
+                    # Добавляем новый промпт (каждая строка отдельно для сохранения форматирования)
+                    # Если промпт многострочный, разбиваем на строки
+                    if '\n' in new_instruction:
+                        prompt_lines = new_instruction.split('\n')
+                        for prompt_line in prompt_lines:
+                            new_lines.append(prompt_line + '\n')
+                    else:
+                        new_lines.append(new_instruction + '\n')
+                    
+                    # Добавляем закрывающую тройную кавычку
+                    new_lines.append(lines[instruction_end_idx])
+                    
+                    # Добавляем оставшиеся строки
+                    new_lines.extend(lines[instruction_end_idx + 1:])
+                
+                with open(full_path, 'w', encoding='utf-8') as f:
+                    f.writelines(new_lines)
             
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
+            # Проверяем синтаксис Python после сохранения
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                ast.parse(content)
+            except SyntaxError as e:
+                # Если синтаксическая ошибка, пробуем восстановить через более простой метод
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Синтаксическая ошибка после сохранения: {e}")
+                # Пробуем восстановить через regex с экранированием
+                pattern = r'(instruction\s*=\s*""").*?(""")'
+                # Экранируем тройные кавычки в промпте, если они есть
+                safe_instruction = new_instruction.replace('"""', '\\"\\"\\"')
+                replacement = r'\1' + safe_instruction + r'\2'
+                new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+                # Но это не сработает, если в промпте действительно нужны тройные кавычки
+                # Поэтому просто возвращаем False
+                return False
             
             return True
         except Exception as e:
-            print(f"Ошибка при сохранении: {e}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при сохранении: {e}", exc_info=True)
             return False
     
     def create_stage(self, stage_name: str, stage_key: str, instruction: str, tools: List[str] = None) -> Dict:
@@ -196,18 +276,12 @@ class StageManager:
         tools_imports = []
         tools_list = []
         
-        if 'GetCategories' in tools:
-            tools_imports.append('GetCategories')
-            tools_list.append('GetCategories')
-        if 'GetServices' in tools:
-            tools_imports.append('GetServices')
-            tools_list.append('GetServices')
-        if 'BookTimes' in tools:
-            tools_imports.append('BookTimes')
-            tools_list.append('BookTimes')
-        if 'CreateBooking' in tools:
-            tools_imports.append('CreateBooking')
-            tools_list.append('CreateBooking')
+        # Используем динамический список инструментов
+        available_tools = self.get_available_tools()
+        for tool_name in tools:
+            if tool_name in available_tools:
+                tools_imports.append(tool_name)
+                tools_list.append(tool_name)
         
         imports = ""
         tools_param = "None"
@@ -611,85 +685,245 @@ class {class_name}(BaseAgent):
             print(f"Ошибка при удалении из dialogue_stages: {e}")
             return False
     
+    def update_stage_tools(self, file_path: str, tools: List[str]) -> bool:
+        """Обновить инструменты в файле агента"""
+        try:
+            full_path = self.project_root / file_path
+            if not full_path.exists():
+                return False
+            
+            with open(full_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # Определяем текущие инструменты из импорта (динамически)
+            available_tools = self.get_available_tools()
+            current_tools = []
+            import_line_idx = None
+            for i, line in enumerate(lines):
+                if 'from .tools.service_tools import' in line:
+                    import_line_idx = i
+                    # Извлекаем инструменты из импорта
+                    import_part = line.split('import')[1].strip()
+                    # Убираем возможные переносы строк и пробелы
+                    import_part = import_part.replace('\n', '').strip()
+                    # Парсим список инструментов
+                    tools_in_import = [t.strip() for t in import_part.split(',')]
+                    current_tools = [t for t in tools_in_import if t in available_tools]
+                    break
+            
+            # Если инструменты не изменились, ничего не делаем
+            if set(current_tools) == set(tools):
+                return True
+            
+            # Обновляем импорт
+            if import_line_idx is not None:
+                if tools:
+                    tools_imports = ', '.join(sorted(tools))
+                    new_import_line = f'from .tools.service_tools import {tools_imports}\n'
+                else:
+                    # Если инструментов нет, удаляем строку импорта
+                    new_import_line = ''
+                lines[import_line_idx] = new_import_line
+            else:
+                # Если импорта нет, добавляем после docstring
+                docstring_end = None
+                for i, line in enumerate(lines):
+                    if '"""' in line:
+                        if docstring_end is None:
+                            docstring_end = i
+                        else:
+                            # Конец docstring
+                            if tools:
+                                tools_imports = ', '.join(sorted(tools))
+                                new_import_line = f'from .tools.service_tools import {tools_imports}\n'
+                                lines.insert(i + 1, new_import_line)
+                            break
+            
+            # Обновляем список tools в super().__init__()
+            # Ищем строку с tools=[...]
+            tools_line_idx = None
+            for i, line in enumerate(lines):
+                if 'tools=[' in line or 'tools = [' in line:
+                    tools_line_idx = i
+                    break
+            
+            if tools_line_idx is not None:
+                # Заменяем строку с tools
+                if tools:
+                    tools_list = ', '.join(sorted(tools))
+                    new_tools_line = f'            tools=[{tools_list}],\n'
+                else:
+                    new_tools_line = '            tools=None,\n'
+                lines[tools_line_idx] = new_tools_line
+            else:
+                # Если параметра нет, добавляем его в super().__init__()
+                for i, line in enumerate(lines):
+                    if 'super().__init__(' in line:
+                        # Ищем закрывающую скобку
+                        start_pos = line.find('super().__init__(') + len('super().__init__(')
+                        paren_count = 1
+                        end_pos = start_pos
+                        found_end = False
+                        
+                        # Проверяем текущую строку
+                        for j in range(start_pos, len(line)):
+                            if line[j] == '(':
+                                paren_count += 1
+                            elif line[j] == ')':
+                                paren_count -= 1
+                                if paren_count == 0:
+                                    end_pos = j
+                                    found_end = True
+                                    break
+                        
+                        # Если не нашли в текущей строке, ищем в следующих
+                        if not found_end:
+                            for j in range(i + 1, min(i + 10, len(lines))):
+                                for k, char in enumerate(lines[j]):
+                                    if char == '(':
+                                        paren_count += 1
+                                    elif char == ')':
+                                        paren_count -= 1
+                                        if paren_count == 0:
+                                            # Вставляем tools перед закрывающей скобкой
+                                            if tools:
+                                                tools_list = ', '.join(sorted(tools))
+                                                new_param = f', tools=[{tools_list}]'
+                                            else:
+                                                new_param = ', tools=None'
+                                            lines[j] = lines[j][:k] + new_param + lines[j][k:]
+                                            found_end = True
+                                            break
+                                if found_end:
+                                    break
+                        else:
+                            # Вставляем tools в текущей строке
+                            if tools:
+                                tools_list = ', '.join(sorted(tools))
+                                new_param = f', tools=[{tools_list}]'
+                            else:
+                                new_param = ', tools=None'
+                            lines[i] = line[:end_pos] + new_param + line[end_pos:]
+                        break
+            
+            # Сохраняем файл
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+            
+            # Проверяем синтаксис
+            try:
+                with open(full_path, 'r', encoding='utf-8') as f:
+                    content_check = f.read()
+                ast.parse(content_check)
+            except SyntaxError as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Синтаксическая ошибка после обновления инструментов: {e}")
+                return False
+            
+            return True
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при обновлении инструментов: {e}", exc_info=True)
+            return False
+    
+    def load_tool_classes(self) -> Dict[str, type]:
+        """Динамически загрузить все классы инструментов из модуля service_tools"""
+        try:
+            # Импортируем модуль service_tools
+            from src.agents.tools import service_tools
+            
+            tool_classes = {}
+            
+            # Проходим по всем атрибутам модуля
+            for name, obj in inspect.getmembers(service_tools):
+                # Проверяем, что это класс, наследуется от BaseModel и имеет метод process
+                if (inspect.isclass(obj) and 
+                    issubclass(obj, BaseModel) and 
+                    obj != BaseModel and
+                    hasattr(obj, 'process') and
+                    callable(getattr(obj, 'process'))):
+                    tool_classes[name] = obj
+            
+            return tool_classes
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при загрузке инструментов: {e}", exc_info=True)
+            # Возвращаем пустой словарь в случае ошибки
+            return {}
+    
     def get_available_tools(self) -> List[str]:
-        """Получить список доступных инструментов"""
-        return [
-            'GetCategories',
-            'GetServices',
-            'BookTimes',
-            'CreateBooking'
-        ]
+        """Получить список доступных инструментов (динамически)"""
+        tool_classes = self.load_tool_classes()
+        return sorted(tool_classes.keys())
     
     def get_stage_detector_instruction(self) -> str:
         """Получить промпт StageDetectorAgent из файла"""
         try:
-            from src.agents.stage_detector_agent import StageDetectorAgent
-            # Используем метод класса для построения промпта
-            return StageDetectorAgent._build_instruction()
+            if not self.stage_detector_file.exists():
+                return ""
+            
+            with open(self.stage_detector_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Извлекаем промпт из файла
+            instruction_match = re.search(r'instruction\s*=\s*"""(.*?)"""', content, re.DOTALL)
+            if instruction_match:
+                return instruction_match.group(1).strip()
+            
+            return ""
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка при генерации промпта определителя: {e}", exc_info=True)
+            logger.error(f"Ошибка при загрузке промпта определителя: {e}", exc_info=True)
             return ""
     
     def save_stage_detector_instruction(self, new_instruction: str) -> bool:
-        """Сохранить базовый промпт StageDetectorAgent в файл шаблона"""
+        """Сохранить промпт StageDetectorAgent в файл"""
         try:
-            if not self.stage_detector_template_file.exists():
-                # Создаём файл если его нет
-                self.stage_detector_template_file.parent.mkdir(parents=True, exist_ok=True)
+            if not self.stage_detector_file.exists():
+                return False
             
-            # Удаляем список стадий из промпта перед сохранением (он будет добавлен автоматически)
-            # Ищем маркер {STAGES_LIST} или секцию со списком стадий
-            lines = new_instruction.split('\n')
-            result_lines = []
-            skip_until_marker = False
-            
-            for line in lines:
-                # Если нашли маркер или начало списка стадий
-                if '{STAGES_LIST}' in line or '**СПИСОК СТАДИЙ:**' in line:
-                    result_lines.append('**СПИСОК СТАДИЙ:**\n{STAGES_LIST}')
-                    skip_until_marker = True
-                    continue
-                
-                # Пропускаем строки со стадиями (начинаются с "- ")
-                if skip_until_marker:
-                    if line.strip().startswith('- ') and ':' in line:
-                        continue
-                    elif line.strip() == '' or not line.strip().startswith('- '):
-                        skip_until_marker = False
-                        result_lines.append(line)
-                        continue
-                else:
-                    result_lines.append(line)
-            
-            # Сохраняем шаблон
-            template_content = '\n'.join(result_lines)
-            with open(self.stage_detector_template_file, 'w', encoding='utf-8') as f:
-                f.write(template_content)
-            
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info("✅ Шаблон промпта определителя стадий сохранён")
-            return True
+            # Используем тот же метод, что и для обычных стадий
+            file_path = str(self.stage_detector_file.relative_to(self.project_root))
+            return self.save_stage_instruction(file_path, new_instruction)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка при сохранении шаблона промпта: {e}", exc_info=True)
+            logger.error(f"Ошибка при сохранении промпта определителя: {e}", exc_info=True)
             return False
     
     def add_stage_to_detector(self, stage_key: str, stage_name: str, stage_description: str) -> bool:
-        """Добавить описание стадии в JSON файл с описаниями"""
+        """Добавить описание стадии в промпт определителя"""
         try:
-            from src.agents.stage_detector_agent import StageDetectorAgent
+            # Получаем текущий промпт
+            current_instruction = self.get_stage_detector_instruction()
             
-            # Сохраняем описание в JSON файл
-            StageDetectorAgent.update_stage_description(stage_key, stage_description)
+            # Проверяем, есть ли уже эта стадия в промпте
+            if f'- {stage_key}:' in current_instruction:
+                # Обновляем существующее описание
+                pattern = rf'(- {re.escape(stage_key)}:).*?(\n)'
+                replacement = rf'\1 {stage_description}\2'
+                new_instruction = re.sub(pattern, replacement, current_instruction, flags=re.DOTALL)
+            else:
+                # Добавляем новую стадию перед последней строкой
+                lines = current_instruction.split('\n')
+                new_line = f'- {stage_key}: {stage_description}'
+                
+                # Ищем место перед последней строкой (обычно это "Верни ТОЛЬКО...")
+                for i in range(len(lines) - 1, -1, -1):
+                    if lines[i].strip() and not lines[i].strip().startswith('- '):
+                        lines.insert(i, new_line)
+                        break
+                else:
+                    lines.append(new_line)
+                
+                new_instruction = '\n'.join(lines)
             
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"✅ Описание стадии '{stage_key}' добавлено в определитель")
-            return True
+            # Сохраняем обновлённый промпт
+            return self.save_stage_detector_instruction(new_instruction)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
@@ -697,17 +931,17 @@ class {class_name}(BaseAgent):
             return False
     
     def remove_stage_from_detector(self, stage_key: str, stage_name: str) -> bool:
-        """Удалить описание стадии из JSON файла"""
+        """Удалить описание стадии из промпта определителя"""
         try:
-            from src.agents.stage_detector_agent import StageDetectorAgent
+            # Получаем текущий промпт
+            current_instruction = self.get_stage_detector_instruction()
             
-            # Удаляем описание из JSON файла
-            StageDetectorAgent.remove_stage_description(stage_key)
+            # Удаляем строку со стадией
+            pattern = rf'- {re.escape(stage_key)}:.*?\n'
+            new_instruction = re.sub(pattern, '', current_instruction)
             
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"✅ Описание стадии '{stage_key}' удалено из определителя")
-            return True
+            # Сохраняем обновлённый промпт
+            return self.save_stage_detector_instruction(new_instruction)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

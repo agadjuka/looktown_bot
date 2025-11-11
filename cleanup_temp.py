@@ -35,3 +35,4 @@ for pycache_dir in base_dir.rglob('__pycache__'):
 print("\n✅ Очистка завершена!")
 
 
+
