@@ -294,8 +294,29 @@ class BaseAgent:
                                             )
                                         except Exception as e:
                                             logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
+                                        
+                                        # Обновляем res_tool_calls для дальнейшей обработки
                                         res_tool_calls = getattr(res, 'tool_calls', None)
                                         logger.debug(f"После вызова инструмента res.tool_calls: {res_tool_calls}")
+                                        
+                                        # Проверяем, что res.text теперь содержит нормальный ответ, а не JSON
+                                        try:
+                                            new_res_text = getattr(res, 'text', None) if res else None
+                                            if new_res_text:
+                                                # Проверяем, не является ли ответ все еще JSON с инструментом
+                                                try:
+                                                    parsed_check = json.loads(new_res_text)
+                                                    if isinstance(parsed_check, dict) and 'tool' in parsed_check:
+                                                        logger.warning(f"После вызова инструмента res.text все еще содержит JSON с инструментом. Делаем еще один wait()...")
+                                                        # Делаем еще один wait() чтобы получить финальный ответ
+                                                        res = run.wait()
+                                                        res_tool_calls = getattr(res, 'tool_calls', None)
+                                                        logger.debug(f"После дополнительного wait() res.tool_calls: {res_tool_calls}")
+                                                except (json.JSONDecodeError, ValueError):
+                                                    # Это нормальный ответ, не JSON - все хорошо
+                                                    pass
+                                        except Exception as e:
+                                            logger.debug(f"Ошибка при проверке res.text после вызова инструмента: {e}")
                                     except Exception as e:
                                         logger.error(f"Ошибка при вызове инструмента {tool_name}: {e}")
                                         # Продолжаем обработку, возможно агент сам обработает ошибку

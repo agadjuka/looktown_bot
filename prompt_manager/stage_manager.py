@@ -135,114 +135,73 @@ class StageManager:
     
     def save_stage_instruction(self, file_path: str, new_instruction: str) -> bool:
         """Сохранить промпт стадии"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             full_path = self.project_root / file_path
             if not full_path.exists():
+                logger.error(f"Файл не найден: {full_path}")
                 return False
             
-            with open(full_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            # Ищем строку с instruction = """
-            instruction_start_idx = None
-            instruction_end_idx = None
-            
-            for i, line in enumerate(lines):
-                # Ищем строку вида: instruction = """ или instruction=""" 
-                if re.search(r'instruction\s*=\s*"""', line):
-                    instruction_start_idx = i
-                    # Проверяем, не закрыта ли кавычка на той же строке
-                    if line.count('"""') >= 2:
-                        # Закрыта на той же строке (однострочный промпт)
-                        instruction_end_idx = i
-                    else:
-                        # Ищем закрывающую тройную кавычку на отдельной строке
-                        for j in range(i + 1, len(lines)):
-                            if '"""' in lines[j]:
-                                instruction_end_idx = j
-                                break
-                    break
-            
-            if instruction_start_idx is None or instruction_end_idx is None:
-                # Fallback на старый метод, если не нашли точные границы
+            # Сохраняем резервную копию на случай ошибки
+            backup_content = None
+            try:
                 with open(full_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # Экранируем специальные символы в new_instruction для regex
-                escaped_instruction = re.escape(new_instruction)
-                # Но нам нужны не экранированные, а просто замена содержимого
-                pattern = r'(instruction\s*=\s*""").*?(""")'
-                replacement = r'\1' + new_instruction + r'\2'
-                new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-                
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-            else:
-                # Безопасная замена: сохраняем всё до instruction, вставляем новый промпт, сохраняем всё после
-                new_lines = []
-                
-                if instruction_start_idx == instruction_end_idx:
-                    # Однострочный промпт - закрывающая кавычка на той же строке
-                    start_line = lines[instruction_start_idx]
-                    # Разделяем строку на части: до """ и после """
-                    parts = start_line.split('"""', 2)
-                    if len(parts) >= 3:
-                        # parts[0] - до первой """, parts[1] - старый промпт, parts[2] - после второй """
-                        new_line = parts[0] + '"""' + new_instruction + '"""' + parts[2]
-                        new_lines.extend(lines[:instruction_start_idx])
-                        new_lines.append(new_line)
-                        new_lines.extend(lines[instruction_start_idx + 1:])
-                    else:
-                        # Не удалось разделить - используем fallback
-                        raise ValueError("Не удалось обработать однострочный промпт")
-                else:
-                    # Многострочный промпт
-                    # Добавляем строки до instruction (включая строку с instruction = """)
-                    new_lines.extend(lines[:instruction_start_idx + 1])
-                    
-                    # Добавляем новый промпт (каждая строка отдельно для сохранения форматирования)
-                    # Если промпт многострочный, разбиваем на строки
-                    if '\n' in new_instruction:
-                        prompt_lines = new_instruction.split('\n')
-                        for prompt_line in prompt_lines:
-                            new_lines.append(prompt_line + '\n')
-                    else:
-                        new_lines.append(new_instruction + '\n')
-                    
-                    # Добавляем закрывающую тройную кавычку
-                    new_lines.append(lines[instruction_end_idx])
-                    
-                    # Добавляем оставшиеся строки
-                    new_lines.extend(lines[instruction_end_idx + 1:])
-                
-                with open(full_path, 'w', encoding='utf-8') as f:
-                    f.writelines(new_lines)
+                    backup_content = f.read()
+            except Exception as e:
+                logger.warning(f"Не удалось создать резервную копию: {e}")
+            
+            # Используем regex для замены промпта - более надежный метод
+            with open(full_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Паттерн для поиска instruction = """..."""
+            # Используем non-greedy match с учетом многострочности
+            pattern = r'(instruction\s*=\s*""")' + r'(.*?)' + r'(""")'
+            
+            # Проверяем, есть ли совпадение
+            match = re.search(pattern, content, re.DOTALL)
+            if not match:
+                logger.error("Не найдено поле instruction в файле")
+                return False
+            
+            # Заменяем содержимое между тройными кавычками
+            # Важно: new_instruction может содержать тройные кавычки, но мы их не экранируем,
+            # так как они внутри строки с тройными кавычками - это нормально для Python
+            new_content = content[:match.start(2)] + new_instruction + content[match.end(2):]
+            
+            # Сохраняем файл
+            with open(full_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
             
             # Проверяем синтаксис Python после сохранения
             try:
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                ast.parse(content)
+                ast.parse(new_content)
             except SyntaxError as e:
-                # Если синтаксическая ошибка, пробуем восстановить через более простой метод
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Синтаксическая ошибка после сохранения: {e}")
-                # Пробуем восстановить через regex с экранированием
-                pattern = r'(instruction\s*=\s*""").*?(""")'
-                # Экранируем тройные кавычки в промпте, если они есть
-                safe_instruction = new_instruction.replace('"""', '\\"\\"\\"')
-                replacement = r'\1' + safe_instruction + r'\2'
-                new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-                # Но это не сработает, если в промпте действительно нужны тройные кавычки
-                # Поэтому просто возвращаем False
+                # Восстанавливаем из резервной копии
+                if backup_content:
+                    try:
+                        with open(full_path, 'w', encoding='utf-8') as f:
+                            f.write(backup_content)
+                        logger.info("Файл восстановлен из резервной копии")
+                    except Exception as restore_error:
+                        logger.error(f"Не удалось восстановить файл: {restore_error}")
                 return False
             
             return True
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.error(f"Ошибка при сохранении: {e}", exc_info=True)
+            # Пробуем восстановить из резервной копии
+            if backup_content:
+                try:
+                    full_path = self.project_root / file_path
+                    with open(full_path, 'w', encoding='utf-8') as f:
+                        f.write(backup_content)
+                    logger.info("Файл восстановлен из резервной копии после исключения")
+                except Exception:
+                    pass
             return False
     
     def create_stage(self, stage_name: str, stage_key: str, instruction: str, tools: List[str] = None) -> Dict:

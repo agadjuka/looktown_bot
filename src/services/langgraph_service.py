@@ -76,6 +76,21 @@ class LangGraphService:
         if name:
             existing = self.find_assistant_by_name(name)
             if existing:
+                # Если требуются инструменты, но существующий Assistant их не имеет - создаём нового
+                if tools and len(tools) > 0:
+                    # Проверяем наличие инструментов у существующего Assistant
+                    existing_tools = getattr(existing, 'tools', None)
+                    if not existing_tools or (isinstance(existing_tools, (list, tuple)) and len(existing_tools) == 0):
+                        logger.warning(f"Существующий ассистент '{name}' не имеет инструментов. Создаём нового с инструментами.")
+                        # Удаляем старый ID из YDB
+                        try:
+                            ydb_client = get_ydb_client()
+                            ydb_client.delete_assistant_id(name)
+                        except Exception as e:
+                            logger.warning(f"Не удалось удалить старый ID из YDB: {e}")
+                        # Создаём нового с инструментами
+                        return self.create_assistant(instruction=instruction, tools=tools, name=name, skip_ydb_save=True)
+                
                 logger.info(f"Используем существующего ассистента: {name}")
                 return existing
         

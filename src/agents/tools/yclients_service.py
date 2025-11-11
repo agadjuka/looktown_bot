@@ -343,7 +343,8 @@ class YclientsService:
                         "staff_name": record.get('staff', {}).get('name') if isinstance(record.get('staff'), dict) else None,
                         "staff_id": record.get('staff', {}).get('id') if isinstance(record.get('staff'), dict) else None,
                         "phone": record.get('client', {}).get('phone') if isinstance(record.get('client'), dict) else None,
-                        "datetime": record.get('datetime') or record.get('date')
+                        "datetime": record.get('datetime') or record.get('date'),
+                        "seance_length": record.get('seance_length') or record.get('length') or None  # Продолжительность в секундах
                     }
                     formatted_records.append(formatted_record)
                 
@@ -393,3 +394,92 @@ class YclientsService:
                         "data": None,
                         "error": f"Ошибка при отмене записи: HTTP {response.status}. {response_text[:500]}"
                     }
+    
+    async def reschedule_record(
+        self,
+        record_id: int,
+        datetime: str,
+        staff_id: int,
+        service_id: int,
+        client_id: int,
+        seance_length: int,
+        save_if_busy: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Перенести запись на новое время
+        
+        Args:
+            record_id: ID записи для переноса
+            datetime: Новое дата и время в ISO формате (например: "2025-10-29T14:00:00+05:00")
+            staff_id: ID мастера
+            service_id: ID услуги
+            client_id: ID клиента
+            seance_length: Продолжительность сеанса в секундах
+            save_if_busy: Сохранить запись даже если слот занят (по умолчанию False)
+            
+        Returns:
+            Dict с результатом операции:
+            - success: bool - успешность операции
+            - message: str - сообщение о результате
+            - data: Optional[Dict] - данные об обновленной записи
+            - error: Optional[str] - сообщение об ошибке
+        """
+        url = f"{self.BASE_URL}/record/{self.company_id}/{record_id}"
+        headers = {
+            "Accept": "application/vnd.yclients.v2+json",
+            "Authorization": self.auth_header,
+            "Content-Type": "application/json"
+        }
+        
+        body = {
+            "staff_id": staff_id,
+            "services": [{"id": service_id}],
+            "client": {"id": client_id},
+            "seance_length": seance_length,
+            "datetime": datetime,
+            "save_if_busy": 1 if save_if_busy else 0
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.put(url, headers=headers, json=body) as response:
+                response_text = await response.text()
+                
+                # Проверяем успешность операции (статус 200-299)
+                if 200 <= response.status < 300:
+                    return {
+                        "success": True,
+                        "message": "Запись успешно перенесена",
+                        "data": {
+                            "record_id": record_id,
+                            "updated": {
+                                "datetime": datetime,
+                                "staff_id": staff_id,
+                                "service_id": service_id,
+                                "seance_length": seance_length
+                            }
+                        },
+                        "error": None
+                    }
+                else:
+                    # Обработка типовых ошибок
+                    if response.status == 409:
+                        return {
+                            "success": False,
+                            "message": None,
+                            "data": None,
+                            "error": "Слот занят или нерабочее время. Выберите другое время."
+                        }
+                    elif response.status == 422:
+                        return {
+                            "success": False,
+                            "message": None,
+                            "data": None,
+                            "error": "Ошибка валидации данных. Проверьте правильность всех параметров."
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "message": None,
+                            "data": None,
+                            "error": f"Ошибка при переносе записи: HTTP {response.status}. {response_text[:500]}"
+                        }

@@ -157,13 +157,15 @@ def register_all_agents(force: bool = False):
                         from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking
                         from src.agents.tools.client_records_tools import GetClientRecords
                         from src.agents.tools.cancel_booking_tools import CancelBooking
+                        from src.agents.tools.reschedule_booking_tools import RescheduleBooking
                         tool_mapping = {
                             'GetCategories': GetCategories,
                             'GetServices': GetServices,
                             'BookTimes': BookTimes,
                             'CreateBooking': CreateBooking,
                             'GetClientRecords': GetClientRecords,
-                            'CancelBooking': CancelBooking
+                            'CancelBooking': CancelBooking,
+                            'RescheduleBooking': RescheduleBooking
                         }
                         tools_classes = [tool_mapping[t] for t in agent['tools'] if t in tool_mapping]
                         if tools_classes:

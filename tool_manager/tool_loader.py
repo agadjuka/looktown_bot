@@ -144,6 +144,7 @@ class ToolLoader:
             ('find_master_by_service_logic.py', 'src.agents.tools.find_master_by_service_logic'),
             ('client_records_logic.py', 'src.agents.tools.client_records_logic'),
             ('cancel_booking_logic.py', 'src.agents.tools.cancel_booking_logic'),
+            ('reschedule_booking_logic.py', 'src.agents.tools.reschedule_booking_logic'),
         ]
         
         for dep_file, dep_module_name in dependencies:
@@ -159,6 +160,7 @@ class ToolLoader:
             'service_tools.py',
             'client_records_tools.py',
             'cancel_booking_tools.py',
+            'reschedule_booking_tools.py',
         ]
         
         loaded_count = 0

@@ -198,9 +198,16 @@ class GetClientRecords(BaseModel):
             
             # Форматируем информацию о клиенте
             client_name = client.get('name', 'Не указано')
+            client_id = client.get('id')
             client_phone = client.get('phone', self.phone)
             
-            result_text = f"Клиент: {client_name}\nТелефон: {client_phone}\n\n"
+            # Форматируем имя клиента с ID в скобках
+            if client_id:
+                client_info = f"{client_name} (ID: {client_id})"
+            else:
+                client_info = client_name
+            
+            result_text = f"Клиент: {client_info}\nТелефон: {client_phone}\n\n"
             
             # Форматируем записи
             if not future_records:
@@ -234,6 +241,11 @@ class GetClientRecords(BaseModel):
                         if staff_id:
                             record_info += f" (ID: {staff_id})"
                         record_info += "\n   "
+                    
+                    # Продолжительность сеанса
+                    seance_length = record.get('seance_length')
+                    if seance_length:
+                        record_info += f"Продолжительность: {seance_length} сек.\n   "
                     
                     # ID записи
                     record_id = record.get('record_id')
