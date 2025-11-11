@@ -5,6 +5,7 @@
 from .tools.client_records_tools import GetClientRecords
 from .tools.reschedule_booking_tools import RescheduleBooking
 from .tools.service_tools import BookTimes
+from .tools.call_manager_tools import CallManager
 
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
@@ -40,7 +41,7 @@ class RescheduleAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[BookTimes, GetClientRecords, RescheduleBooking],
+            tools=[BookTimes, GetClientRecords, RescheduleBooking, CallManager],
             agent_name="Агент переноса бронирований"
         )
 

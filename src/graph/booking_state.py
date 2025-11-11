@@ -9,6 +9,7 @@ class BookingState(TypedDict):
     """Состояние графа бронирования"""
     message: str                    # Исходное сообщение пользователя
     thread: Thread                  # Thread для всех агентов (общая история)
+    chat_id: Optional[str]          # ID чата в Telegram
     stage: Optional[str]            # Определённая стадия диалога
     extracted_info: Optional[dict]  # Извлечённая информация
     answer: str                     # Финальный ответ пользователю

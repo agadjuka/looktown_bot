@@ -365,6 +365,7 @@ class YandexAgentService:
         initial_state: BookingState = {
             "message": input_with_time,
             "thread": thread,
+            "chat_id": chat_id,
             "stage": None,
             "extracted_info": None,
             "answer": "",
@@ -388,7 +389,7 @@ class YandexAgentService:
         answer = normalize_dates_in_text(answer)
         answer = normalize_times_in_text(answer)
         
-        # Проверяем на эскалацию
+        # Проверяем на эскалацию через старый метод (для совместимости)
         if answer.strip().startswith('[CALL_MANAGER]'):
             return self.escalation_service.handle(answer, chat_id)
         

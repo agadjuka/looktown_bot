@@ -2,6 +2,7 @@
 Агент для просмотра записей клиента
 """
 from .tools.client_records_tools import GetClientRecords
+from .tools.call_manager_tools import CallManager
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -46,7 +47,7 @@ class ViewMyBookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetClientRecords],
+            tools=[GetClientRecords, CallManager],
             agent_name="Агент просмотра записей"
         )
 

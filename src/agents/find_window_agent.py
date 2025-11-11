@@ -3,6 +3,8 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
+from .tools.service_tools import BookTimes
+from .tools.call_manager_tools import CallManager
 
 
 class FindWindowAgent(BaseAgent):
@@ -32,7 +34,7 @@ class FindWindowAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None,
+            tools=[BookTimes, CallManager],
             agent_name="Агент поиска окон"
         )
 

@@ -308,9 +308,7 @@ if user_input:
                         "CancelBookingAgent": getattr(st.session_state.booking_graph, 'cancel_agent', None),
                         "RescheduleAgent": getattr(st.session_state.booking_graph, 'reschedule_agent', None),
                         "ViewMyBookingAgent": getattr(st.session_state.booking_graph, 'view_my_booking_agent', None),
-                        "CallManagerAgent": getattr(st.session_state.booking_graph, 'call_manager_agent', None),
                         "InformationGatheringAgent": getattr(st.session_state.booking_graph, 'information_gathering_agent', None),
-                        "FallbackAgent": getattr(st.session_state.booking_graph, 'fallback_agent', None),
                     }
                     agent = agent_map.get(agent_name)
                     if agent and hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:

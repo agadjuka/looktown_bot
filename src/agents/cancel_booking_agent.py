@@ -3,6 +3,7 @@
 """
 from .tools.cancel_booking_tools import CancelBooking
 from .tools.client_records_tools import GetClientRecords
+from .tools.call_manager_tools import CallManager
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -37,6 +38,6 @@ class CancelBookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[CancelBooking, GetClientRecords],
+            tools=[CancelBooking, GetClientRecords, CallManager],
             agent_name="Агент отмены бронирований"
         )

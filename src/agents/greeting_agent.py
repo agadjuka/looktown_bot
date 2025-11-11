@@ -3,6 +3,7 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
+from .tools.call_manager_tools import CallManager
 
 
 class GreetingAgent(BaseAgent):
@@ -32,7 +33,7 @@ Stage_code: 654
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None,
+            tools=[CallManager],
             agent_name="Агент приветствия"
         )
 

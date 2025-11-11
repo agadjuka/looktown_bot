@@ -15,5 +15,3 @@ class DialogueStage(str, Enum):
     CANCELLATION_REQUEST = "cancellation_request"  # Запрос на отмену записи
     RESCHEDULE = "reschedule"                 # Перенос записи
     VIEW_MY_BOOKING = "view_my_booking"        # Просмотр своих записей
-    CALL_MANAGER = "call_manager"              # Передача диалога менеджеру
-    FALLBACK = "fallback"                     # Вопросы не по теме салона

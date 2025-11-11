@@ -9,6 +9,7 @@ from .base_agent import BaseAgent
 from .dialogue_stages import DialogueStage
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
+from .tools.call_manager_tools import CallManager
 
 
 class StageDetection(BaseModel):
@@ -24,6 +25,8 @@ class StageDetectorAgent(BaseAgent):
     def __init__(self, langgraph_service: LangGraphService):
         instruction = """Прочитай последнее сообщение клиента и ознакомься с историей переписки. Определи, какая стадия диалога подходит больше всего.
 Прочитай последнее сообщение клиента и ознакомься с историей переписки. Определи, какая стадия диалога подходит больше всего.
+
+**ВАЖНО: Если клиент прямым текстом просит позвать менеджера, связаться с менеджером, передать диалог менеджеру или выражает сильное недовольство, требующее вмешательства менеджера, то ТЫ ДОЛЖЕН использовать инструмент CallManager. После вызова CallManager твоя работа завершается.**
 
 **СПИСОК СТАДИЙ:**
 
@@ -43,17 +46,13 @@ class StageDetectorAgent(BaseAgent):
 
 - view_my_booking: Клиент хочет посмотреть свои предстоящие записи ("на когда я записан?", "какие у меня записи?").
 
-- call_manager: Получи инструкцию (запроси инструкцию для стадии диалога call_manager) как передать диалог менеджеру в трёх случаях. 1.Когда ты не знаешь ответа на вопрос клиента. 2.Когда ты чувствуешь что клиент чем то недоволен, начинается конфликт. 3. Когда ты получил какую то техническую ошибку при использовании инструментов.
 
-- fallback: Клиент задал вопрос не по теме салона (о погоде, политике и т.д.).
-
-Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии.
-Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии."""
+Верни ТОЛЬКО одно слово - название стадии. Не используй инструменты, у тебя достаточно информации для определения стадии. ИСКЛЮЧЕНИЕ: используй инструмент CallManager, если клиент явно просит позвать менеджера или выражает сильное недовольство."""
         
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=None,
+            tools=[CallManager],
             agent_name="Определитель стадий диалога"
         )
     
@@ -69,6 +68,14 @@ class StageDetectorAgent(BaseAgent):
             
             logger.debug(f"Получен ответ от агента определения стадии: {response[:200] if response else 'None/Empty'}")
             
+            # Если CallManager был вызван, BaseAgent вернет "[CALL_MANAGER_RESULT]"
+            # Это будет обработано в графе через проверку _call_manager_result
+            # Здесь мы просто возвращаем валидную стадию, граф сам обработает CallManager
+            if response == "[CALL_MANAGER_RESULT]":
+                logger.info("CallManager был вызван в StageDetectorAgent")
+                # Возвращаем валидную стадию, граф обработает CallManager через _call_manager_result
+                return StageDetection(stage=DialogueStage.GREETING.value)
+            
             # Парсим ответ
             detection = self._parse_response(response)
             
@@ -76,9 +83,9 @@ class StageDetectorAgent(BaseAgent):
             
             # Валидируем стадию
             if detection.stage not in [stage.value for stage in DialogueStage]:
-                logger.warning(f"Неизвестная стадия: {detection.stage}, устанавливаю fallback")
+                logger.warning(f"Неизвестная стадия: {detection.stage}, устанавливаю greeting")
                 logger.warning(f"Доступные стадии: {[stage.value for stage in DialogueStage]}")
-                detection.stage = DialogueStage.FALLBACK.value
+                detection.stage = DialogueStage.GREETING.value
             
             return detection
             
@@ -90,13 +97,13 @@ class StageDetectorAgent(BaseAgent):
             logger.error(f"Сообщение: {message[:200]}")
             logger.error(f"Thread ID: {thread.id if thread and hasattr(thread, 'id') else 'N/A'}")
             logger.error(f"Traceback:\n{error_traceback}")
-            return StageDetection(stage=DialogueStage.FALLBACK.value)
+            return StageDetection(stage=DialogueStage.GREETING.value)
     
     def _parse_response(self, response: str) -> StageDetection:
         """Парсинг ответа агента в StageDetection"""
         if not response:
             logger.warning("Пустой ответ от агента определения стадии")
-            return StageDetection(stage=DialogueStage.FALLBACK.value)
+            return StageDetection(stage=DialogueStage.GREETING.value)
         
         # Убираем лишние пробелы и переносы строк, приводим к нижнему регистру
         response_clean = response.strip().lower()
@@ -150,4 +157,4 @@ class StageDetectorAgent(BaseAgent):
         # Fallback: если не удалось определить стадию
         logger.warning(f"Не удалось определить стадию из ответа: {response_clean}")
         logger.warning(f"Доступные стадии: {valid_stages}")
-        return StageDetection(stage=DialogueStage.FALLBACK.value)
+        return StageDetection(stage=DialogueStage.GREETING.value)

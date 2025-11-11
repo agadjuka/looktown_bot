@@ -3,6 +3,7 @@
 """
 
 from .tools.service_tools import GetCategories, GetServices, ViewService
+from .tools.call_manager_tools import CallManager
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 
@@ -49,7 +50,7 @@ class InformationGatheringAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, ViewService],
+            tools=[GetCategories, GetServices, ViewService, CallManager],
             agent_name="Агент сбора информации"
         )
 

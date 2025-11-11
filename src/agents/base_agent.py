@@ -47,6 +47,9 @@ class BaseAgent:
         
         # Инициализируем список для отслеживания tool_calls
         self._last_tool_calls = []
+        
+        # Результат CallManager (если был вызван)
+        self._call_manager_result = None
     
     def __call__(self, message: str, thread: Thread) -> str:
         """
@@ -397,17 +400,32 @@ class BaseAgent:
                                 "result": x
                             })
                         except Exception as e:
-                            logger.error(f"Ошибка при выполнении инструмента {f.function.name}: {e}")
-                            result.append({
-                                "name": f.function.name,
-                                "content": f"Ошибка при выполнении инструмента: {str(e)}"
-                            })
+                            # Проверяем, не является ли это CallManagerException
+                            from .tools.call_manager_tools import CallManagerException
+                            if isinstance(e, CallManagerException):
+                                # Сохраняем результат CallManager и прекращаем работу агента
+                                self._call_manager_result = e.escalation_result
+                                logger.info(f"CallManager вызван через инструмент, прекращаем работу агента {self.agent_name}")
+                                # Прерываем цикл обработки tool_calls
+                                break
+                            else:
+                                logger.error(f"Ошибка при выполнении инструмента {f.function.name}: {e}")
+                                result.append({
+                                    "name": f.function.name,
+                                    "content": f"Ошибка при выполнении инструмента: {str(e)}"
+                                })
                     else:
                         logger.warning(f"Инструмент {f.function.name} не найден в списке доступных инструментов")
                         result.append({
                             "name": f.function.name,
                             "content": f"Инструмент {f.function.name} недоступен"
                         })
+                
+                # Проверяем, был ли вызван CallManager
+                if self._call_manager_result is not None:
+                    # Прекращаем обработку tool_calls и возвращаем результат CallManager
+                    logger.info(f"CallManager был вызван, прекращаем обработку tool_calls для агента {self.agent_name}")
+                    break
                 
                 if result:
                     # Логируем результаты инструментов перед отправкой в LLM
@@ -475,6 +493,12 @@ class BaseAgent:
             
             if iteration >= max_iterations:
                 logger.warning(f"Достигнуто максимальное количество итераций обработки tool_calls: {max_iterations}")
+            
+            # Проверяем, был ли вызван CallManager
+            if self._call_manager_result is not None:
+                # Возвращаем специальный маркер вместо текста ответа
+                logger.info(f"Возвращаем результат CallManager для агента {self.agent_name}")
+                return "[CALL_MANAGER_RESULT]"
             
             # Проверяем наличие текста перед возвратом
             logger.debug(f"Финальная проверка результата для агента {self.agent_name}:")

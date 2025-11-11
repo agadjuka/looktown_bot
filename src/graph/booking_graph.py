@@ -13,11 +13,12 @@ from ..agents.greeting_agent import GreetingAgent
 from ..agents.information_gathering_agent import InformationGatheringAgent
 from ..agents.find_window_agent import FindWindowAgent
 from ..agents.view_my_booking_agent import ViewMyBookingAgent
-from ..agents.call_manager_agent import CallManagerAgent
-from ..agents.fallback_agent import FallbackAgent
+
+
 
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
+from ..services.escalation_service import EscalationService
 
 
 class BookingGraph:
@@ -49,8 +50,6 @@ class BookingGraph:
                 'cancellation_request': CancelBookingAgent(langgraph_service),
                 'reschedule': RescheduleAgent(langgraph_service),
                 'view_my_booking': ViewMyBookingAgent(langgraph_service),
-                'call_manager': CallManagerAgent(langgraph_service),
-                'fallback': FallbackAgent(langgraph_service),
             }
         
         # Используем агентов из кэша
@@ -64,8 +63,6 @@ class BookingGraph:
         self.cancel_agent = agents['cancellation_request']
         self.reschedule_agent = agents['reschedule']
         self.view_my_booking_agent = agents['view_my_booking']
-        self.call_manager_agent = agents['call_manager']
-        self.fallback_agent = agents['fallback']
         
         # Создаём граф
         self.graph = self._create_graph()
@@ -85,14 +82,11 @@ class BookingGraph:
         graph.add_node("handle_cancellation_request", self._handle_cancellation_request)
         graph.add_node("handle_reschedule", self._handle_reschedule)
         graph.add_node("handle_view_my_booking", self._handle_view_my_booking)
-        graph.add_node("handle_call_manager", self._handle_call_manager)
-        graph.add_node("handle_fallback", self._handle_fallback)
-        
         # Добавляем рёбра
         graph.add_edge(START, "detect_stage")
         graph.add_conditional_edges(
             "detect_stage",
-            self._route_by_stage,
+            self._route_after_detect,
             {
                 "greeting": "handle_greeting",
                 "information_gathering": "handle_information_gathering",
@@ -102,8 +96,7 @@ class BookingGraph:
                 "cancellation_request": "handle_cancellation_request",
                 "reschedule": "handle_reschedule",
                 "view_my_booking": "handle_view_my_booking",
-                "call_manager": "handle_call_manager",
-                "fallback": "handle_fallback",
+                "end": END
             }
         )
         graph.add_edge("handle_greeting", END)
@@ -114,8 +107,6 @@ class BookingGraph:
         graph.add_edge("handle_cancellation_request", END)
         graph.add_edge("handle_reschedule", END)
         graph.add_edge("handle_view_my_booking", END)
-        graph.add_edge("handle_call_manager", END)
-        graph.add_edge("handle_fallback", END)
         return graph
     
     def _detect_stage(self, state: BookingState) -> BookingState:
@@ -125,148 +116,173 @@ class BookingGraph:
         logger.info(f"Определение стадии диалога, thread_id: {thread_id}")
         
         message = state["message"]
+        chat_id = state.get("chat_id")
+        
+        # Сохраняем chat_id в thread для использования в CallManager
+        if thread and chat_id:
+            thread.chat_id = chat_id
         
         # Определяем стадию
         stage_detection = self.stage_detector.detect_stage(message, thread)
+        
+        # Проверяем, был ли вызван CallManager в StageDetectorAgent
+        if hasattr(self.stage_detector, '_call_manager_result') and self.stage_detector._call_manager_result:
+            escalation_result = self.stage_detector._call_manager_result
+            logger.info(f"CallManager был вызван в StageDetectorAgent, chat_id: {chat_id}")
+            
+            return {
+                "answer": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                "manager_alert": escalation_result.get("manager_alert"),
+                "agent_name": "StageDetectorAgent",
+                "used_tools": ["CallManager"]
+            }
         
         return {
             "stage": stage_detection.stage
         }
     
-    def _route_by_stage(self, state: BookingState) -> Literal[
+    def _route_after_detect(self, state: BookingState) -> Literal[
         "greeting", "information_gathering", "booking", "booking_to_master",
-        "find_window", "cancellation_request", "reschedule", "view_my_booking",
-        "call_manager", "fallback"
+        "find_window", "cancellation_request", "reschedule", "view_my_booking", "end"
     ]:
-        """Маршрутизация по стадии"""
-        stage = state.get("stage", "fallback")
+        """Маршрутизация после определения стадии"""
+        # Если CallManager был вызван, завершаем граф
+        if state.get("answer") and state.get("manager_alert"):
+            logger.info("CallManager был вызван в StageDetectorAgent, завершаем граф")
+            return "end"
+        
+        # Иначе маршрутизируем по стадии
+        stage = state.get("stage", "greeting")
         logger.info(f"Маршрутизация на стадию: {stage}")
         
         # Валидация стадии
         valid_stages = [
             "greeting", "information_gathering", "booking", "booking_to_master",
-            "find_window", "cancellation_request", "reschedule", "view_my_booking",
-            "call_manager", "fallback"
+            "find_window", "cancellation_request", "reschedule", "view_my_booking"
         ]
         
         if stage not in valid_stages:
-            logger.warning(f"⚠️ Неизвестная стадия: {stage}, устанавливаю fallback")
-            return "fallback"
+            logger.warning(f"⚠️ Неизвестная стадия: {stage}, устанавливаю greeting")
+            return "greeting"
         
         return stage
+    
+    def _process_agent_result(self, agent, answer: str, state: BookingState, agent_name: str) -> BookingState:
+        """
+        Обработка результата агента с проверкой на CallManager
+        
+        Args:
+            agent: Экземпляр агента
+            answer: Ответ агента
+            state: Текущее состояние графа
+            agent_name: Имя агента
+            
+        Returns:
+            Обновленное состояние графа
+        """
+        used_tools = [tool["name"] for tool in agent._last_tool_calls] if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls else []
+        
+        # Проверяем, был ли вызван CallManager через инструмент
+        if answer == "[CALL_MANAGER_RESULT]" and hasattr(agent, '_call_manager_result') and agent._call_manager_result:
+            escalation_result = agent._call_manager_result
+            chat_id = state.get("chat_id", "unknown")
+            
+            logger.info(f"CallManager был вызван через инструмент в агенте {agent_name}, chat_id: {chat_id}")
+            
+            return {
+                "answer": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                "manager_alert": escalation_result.get("manager_alert"),
+                "agent_name": agent_name,
+                "used_tools": used_tools
+            }
+        
+        return {"answer": answer, "agent_name": agent_name, "used_tools": used_tools}
+    
+    def _prepare_thread_for_agent(self, state: BookingState):
+        """Сохраняет chat_id в thread для использования в CallManager"""
+        thread = state.get("thread")
+        chat_id = state.get("chat_id")
+        if thread and chat_id:
+            thread.chat_id = chat_id
     
     def _handle_greeting(self, state: BookingState) -> BookingState:
         """Обработка приветствия"""
         logger.info("Обработка приветствия")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.greeting_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.greeting_agent._last_tool_calls] if hasattr(self.greeting_agent, '_last_tool_calls') and self.greeting_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "GreetingAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.greeting_agent, answer, state, "GreetingAgent")
     
     def _handle_information_gathering(self, state: BookingState) -> BookingState:
         """Обработка сбора информации"""
         logger.info("Обработка сбора информации")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.information_gathering_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.information_gathering_agent._last_tool_calls] if hasattr(self.information_gathering_agent, '_last_tool_calls') and self.information_gathering_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "InformationGatheringAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.information_gathering_agent, answer, state, "InformationGatheringAgent")
     
     def _handle_booking(self, state: BookingState) -> BookingState:
         """Обработка бронирования"""
         logger.info("Обработка бронирования")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.booking_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.booking_agent._last_tool_calls] if hasattr(self.booking_agent, '_last_tool_calls') and self.booking_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "BookingAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.booking_agent, answer, state, "BookingAgent")
     
     def _handle_booking_to_master(self, state: BookingState) -> BookingState:
         """Обработка бронирования к мастеру"""
         logger.info("Обработка бронирования к мастеру")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.booking_to_master_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.booking_to_master_agent._last_tool_calls] if hasattr(self.booking_to_master_agent, '_last_tool_calls') and self.booking_to_master_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "BookingToMasterAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.booking_to_master_agent, answer, state, "BookingToMasterAgent")
     
     def _handle_find_window(self, state: BookingState) -> BookingState:
         """Обработка поиска окна"""
         logger.info("Обработка поиска окна")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.find_window_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.find_window_agent._last_tool_calls] if hasattr(self.find_window_agent, '_last_tool_calls') and self.find_window_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "FindWindowAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.find_window_agent, answer, state, "FindWindowAgent")
     
     def _handle_cancellation_request(self, state: BookingState) -> BookingState:
         """Обработка отмены"""
         logger.info("Обработка отмены")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.cancel_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.cancel_agent._last_tool_calls] if hasattr(self.cancel_agent, '_last_tool_calls') and self.cancel_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "CancelBookingAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.cancel_agent, answer, state, "CancelBookingAgent")
     
     def _handle_reschedule(self, state: BookingState) -> BookingState:
         """Обработка переноса"""
         logger.info("Обработка переноса")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.reschedule_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.reschedule_agent._last_tool_calls] if hasattr(self.reschedule_agent, '_last_tool_calls') and self.reschedule_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "RescheduleAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.reschedule_agent, answer, state, "RescheduleAgent")
     
     def _handle_view_my_booking(self, state: BookingState) -> BookingState:
         """Обработка просмотра записей"""
         logger.info("Обработка просмотра записей")
+        self._prepare_thread_for_agent(state)
         message = state["message"]
         thread = state["thread"]
         
         answer = self.view_my_booking_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.view_my_booking_agent._last_tool_calls] if hasattr(self.view_my_booking_agent, '_last_tool_calls') and self.view_my_booking_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "ViewMyBookingAgent", "used_tools": used_tools}
+        return self._process_agent_result(self.view_my_booking_agent, answer, state, "ViewMyBookingAgent")
     
-    def _handle_call_manager(self, state: BookingState) -> BookingState:
-        """Обработка передачи менеджеру"""
-        logger.info("Обработка передачи менеджеру")
-        message = state["message"]
-        thread = state["thread"]
-        
-        answer = self.call_manager_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.call_manager_agent._last_tool_calls] if hasattr(self.call_manager_agent, '_last_tool_calls') and self.call_manager_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "CallManagerAgent", "used_tools": used_tools}
-    
-    def _handle_fallback(self, state: BookingState) -> BookingState:
-        """Обработка fallback"""
-        logger.info("Обработка fallback")
-        message = state["message"]
-        thread = state["thread"]
-        
-        answer = self.fallback_agent(message, thread)
-        used_tools = [tool["name"] for tool in self.fallback_agent._last_tool_calls] if hasattr(self.fallback_agent, '_last_tool_calls') and self.fallback_agent._last_tool_calls else []
-        
-        return {"answer": answer, "agent_name": "FallbackAgent", "used_tools": used_tools}
-
-    def invoke(self, state: BookingState) -> BookingState:
-        """Выполнение графа"""
-        return self.compiled_graph.invoke(state)
-
-        
+            
