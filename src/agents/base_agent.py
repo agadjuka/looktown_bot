@@ -252,22 +252,36 @@ class BaseAgent:
                                 logger.warning(f"Инструмент: {tool_name}, аргументы: {tool_args}")
                                 
                                 # Если инструмент есть в списке доступных, вызываем его вручную
+                                # Проверяем регистронезависимо, так как SDK может возвращать lowercase
+                                tool_name_normalized = tool_name
+                                tool_found = None
+                                
+                                # Сначала пробуем точное совпадение
                                 if tool_name in self.tools:
-                                    logger.info(f"Вызываем инструмент {tool_name} вручную из JSON")
-                                    fn = self.tools[tool_name]
+                                    tool_found = tool_name
+                                else:
+                                    # Пробуем найти регистронезависимо
+                                    for key in self.tools.keys():
+                                        if key.lower() == tool_name.lower():
+                                            tool_found = key
+                                            break
+                                
+                                if tool_found:
+                                    logger.info(f"Вызываем инструмент {tool_found} вручную из JSON (запрошен как {tool_name})")
+                                    fn = self.tools[tool_found]
                                     try:
                                         obj = fn(**tool_args)
                                         tool_result = obj.process(thread) if hasattr(obj, 'process') else str(obj)
                                         
                                         # Сохраняем информацию о вызове
                                         self._last_tool_calls.append({
-                                            "name": tool_name,
+                                            "name": tool_found,
                                             "args": tool_args,
                                             "result": tool_result
                                         })
                                         
                                         # Логируем результаты инструментов перед отправкой в LLM
-                                        tool_result_data = [{"name": tool_name, "content": tool_result}]
+                                        tool_result_data = [{"name": tool_found, "content": tool_result}]
                                         try:
                                             llm_logger.log_tool_results(
                                                 agent_name=self.agent_name,
@@ -346,8 +360,22 @@ class BaseAgent:
                 for f in res_tool_calls:
                     logger.debug(f"Вызов функции {f.function.name}", f"args={f.function.arguments}")
                     
-                    if f.function.name in self.tools:
-                        fn = self.tools[f.function.name]
+                    # Проверяем регистронезависимо, так как SDK может возвращать lowercase
+                    tool_name = f.function.name
+                    tool_found = None
+                    
+                    # Сначала пробуем точное совпадение
+                    if tool_name in self.tools:
+                        tool_found = tool_name
+                    else:
+                        # Пробуем найти регистронезависимо
+                        for key in self.tools.keys():
+                            if key.lower() == tool_name.lower():
+                                tool_found = key
+                                break
+                    
+                    if tool_found:
+                        fn = self.tools[tool_found]
                         # Обрабатываем аргументы (могут быть строкой JSON или словарём)
                         args = f.function.arguments
                         if isinstance(args, str):
@@ -360,11 +388,11 @@ class BaseAgent:
                         try:
                             obj = fn(**args)
                             x = obj.process(thread) if hasattr(obj, 'process') else str(obj)
-                            result.append({"name": f.function.name, "content": x})
+                            result.append({"name": tool_found, "content": x})
                             
                             # Сохраняем информацию о вызове для отслеживания
                             self._last_tool_calls.append({
-                                "name": f.function.name,
+                                "name": tool_found,
                                 "args": args,
                                 "result": x
                             })

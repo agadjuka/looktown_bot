@@ -5,7 +5,8 @@ from .service_tools import (
     GetCategories,
     GetServices,
     BookTimes,
-    CreateBooking
+    CreateBooking,
+    ViewService
 )
 from .client_records_tools import GetClientRecords
 from .cancel_booking_tools import CancelBooking
@@ -15,6 +16,7 @@ __all__ = [
     # Инструменты каталога услуг
     "GetCategories",
     "GetServices",
+    "ViewService",
     # Инструменты бронирования
     "BookTimes",
     "CreateBooking",

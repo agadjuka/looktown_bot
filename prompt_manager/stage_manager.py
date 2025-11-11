@@ -167,19 +167,46 @@ class StageManager:
                 return False
             
             # Заменяем содержимое между тройными кавычками
-            # Важно: new_instruction может содержать тройные кавычки, но мы их не экранируем,
-            # так как они внутри строки с тройными кавычками - это нормально для Python
-            new_content = content[:match.start(2)] + new_instruction + content[match.end(2):]
+            # Важно: new_instruction может содержать тройные кавычки, которые нужно экранировать
+            # Заменяем тройные кавычки внутри промпта на временный маркер, чтобы не сломать синтаксис
+            # Используем маркер, который точно не встретится в промпте
+            TEMP_TRIPLE_QUOTE_MARKER = "___TRIPLE_QUOTE_REPLACEMENT___"
+            escaped_instruction = new_instruction.replace('"""', TEMP_TRIPLE_QUOTE_MARKER)
+            
+            new_content = content[:match.start(2)] + escaped_instruction + content[match.end(2):]
+            
+            # Теперь заменяем временный маркер обратно на тройные кавычки
+            # Но только внутри строки (между открывающими и закрывающими кавычками)
+            # Находим позиции открывающих и закрывающих кавычек
+            quote_start = match.start(1) + len(match.group(1))
+            quote_end = match.end(3)
+            
+            # Заменяем маркер обратно на экранированные тройные кавычки
+            # В Python внутри тройных кавычек можно использовать экранированные кавычки
+            # Но проще использовать одинарные кавычки внутри или заменить на что-то безопасное
+            # Для безопасности заменяем на комбинацию, которая не сломает синтаксис
+            # Используем: \"\"\" -> это будет работать внутри тройных кавычек
+            # Но на самом деле внутри тройных кавычек нельзя использовать тройные кавычки
+            # Поэтому заменяем на одинарные кавычки в тройных
+            final_content = new_content.replace(TEMP_TRIPLE_QUOTE_MARKER, "'''")
             
             # Сохраняем файл
             with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
+                f.write(final_content)
             
             # Проверяем синтаксис Python после сохранения
             try:
-                ast.parse(new_content)
+                ast.parse(final_content)
             except SyntaxError as e:
                 logger.error(f"Синтаксическая ошибка после сохранения: {e}")
+                logger.error(f"Ошибка на строке {e.lineno}, позиция {e.offset}")
+                # Выводим контекст вокруг ошибки
+                lines = final_content.split('\n')
+                error_line_idx = e.lineno - 1 if e.lineno else 0
+                start_idx = max(0, error_line_idx - 3)
+                end_idx = min(len(lines), error_line_idx + 4)
+                context = '\n'.join(lines[start_idx:end_idx])
+                logger.error(f"Контекст ошибки (строки {start_idx+1}-{end_idx}):\n{context}")
                 # Восстанавливаем из резервной копии
                 if backup_content:
                     try:
@@ -246,7 +273,13 @@ class StageManager:
         tools_param = "None"
         if tools_imports:
             imports = f"from .tools.service_tools import {', '.join(tools_imports)}\n"
-            tools_param = f"[{', '.join(tools_list)}]"
+            # Формируем список инструментов с кавычками
+            quoted_tools = ['"' + tool + '"' for tool in tools_list]
+            tools_param = f"[{', '.join(quoted_tools)}]"
+        
+        # Экранируем тройные кавычки в instruction, заменяя их на тройные одинарные
+        # чтобы не сломать синтаксис Python
+        escaped_instruction = instruction.replace('"""', "'''")
         
         file_content = f'''"""
 Агент для стадии {stage_name}
@@ -259,7 +292,7 @@ class {class_name}(BaseAgent):
     """Агент для стадии {stage_name}"""
     
     def __init__(self, langgraph_service: LangGraphService):
-        instruction = """{instruction}"""
+        instruction = """{escaped_instruction}"""
         
         super().__init__(
             langgraph_service=langgraph_service,
@@ -765,43 +798,27 @@ class {class_name}(BaseAgent):
                     insert_pos += 1
             
             # Удаляем все вхождения tools= в super().__init__()
-            # Ищем super().__init__ и удаляем все параметры tools
+            # Ищем именно .__init__( и обрабатываем ТОЛЬКО его параметры
+            # Игнорируем все что до .__init__(, включая super()
             super_init_start = None
             super_init_end = None
             
             for i, line in enumerate(lines):
-                if 'super().__init__(' in line:
+                if '.__init__(' in line:
                     super_init_start = i
-                    # Ищем закрывающую скобку
+                    # Ищем открывающую скобку __init__
                     paren_count = 0
                     found_open = False
+                    init_open_pos = line.find('.__init__(')
+                    
+                    # Считаем скобки от .__init__(
                     for j in range(i, min(i + 15, len(lines))):
-                        for char in lines[j]:
-                            if char == '(':
-                                paren_count += 1
-                                found_open = True
-                            elif char == ')':
-                                paren_count -= 1
-                                if paren_count == 0 and found_open:
-                                    super_init_end = j
-                                    break
-                        if super_init_end is not None:
-                            break
-                    break
-            
-            # Удаляем все вхождения tools= в super().__init__()
-            # Ищем super().__init__ и удаляем все параметры tools
-            super_init_start = None
-            super_init_end = None
-            
-            for i, line in enumerate(lines):
-                if 'super().__init__(' in line:
-                    super_init_start = i
-                    # Ищем закрывающую скобку
-                    paren_count = 0
-                    found_open = False
-                    for j in range(i, min(i + 15, len(lines))):
-                        for char in lines[j]:
+                        start_char = 0
+                        if j == i:
+                            start_char = init_open_pos + len('.__init__(')
+                        
+                        for char_idx in range(start_char, len(lines[j])):
+                            char = lines[j][char_idx]
                             if char == '(':
                                 paren_count += 1
                                 found_open = True
@@ -815,49 +832,90 @@ class {class_name}(BaseAgent):
                     break
             
             if super_init_start is not None and super_init_end is not None:
-                # Собираем все строки между super_init_start и super_init_end
+                # Собираем только строки с параметрами __init__
                 super_init_lines = []
-                for i in range(super_init_start, super_init_end + 1):
+                init_open_pos = lines[super_init_start].find('.__init__(')
+                
+                # Берем часть строки после .__init__(
+                first_line_content = lines[super_init_start][init_open_pos + len('.__init__('):]
+                super_init_lines.append(first_line_content)
+                
+                # Добавляем остальные строки до закрывающей скобки
+                for i in range(super_init_start + 1, super_init_end + 1):
                     super_init_lines.append(lines[i])
                 
                 # Объединяем в одну строку для обработки
-                super_init_content = ''.join(super_init_lines)
+                init_params_content = ''.join(super_init_lines)
                 
-                # Удаляем все вхождения tools=... (включая запятые перед/после)
-                # Паттерн для удаления: запятая (опционально), пробелы, tools=, значение до запятой или закрывающей скобки
-                super_init_content = re.sub(r',?\s*tools\s*=\s*\[[^\]]*\],?\s*', '', super_init_content)
-                super_init_content = re.sub(r',?\s*tools\s*=\s*None,?\s*', '', super_init_content)
+                # Удаляем tools= только из параметров __init__
+                init_params_content = re.sub(r',\s*tools\s*=\s*\[[^\]]*\]', '', init_params_content)
+                init_params_content = re.sub(r',\s*tools\s*=\s*None', '', init_params_content)
+                init_params_content = re.sub(r'^\s*tools\s*=\s*\[[^\]]*\]\s*,?\s*', '', init_params_content)
+                init_params_content = re.sub(r'^\s*tools\s*=\s*None\s*,?\s*', '', init_params_content)
+                
+                # Убираем лишние запятые
+                init_params_content = re.sub(r',\s*,+', ',', init_params_content)
+                init_params_content = re.sub(r',\s*\)', ')', init_params_content)
+                init_params_content = re.sub(r'^\s*,+', '', init_params_content)
                 
                 # Разбиваем обратно на строки
-                new_super_lines = super_init_content.splitlines(keepends=True)
+                new_init_params_lines = init_params_content.splitlines(keepends=True)
                 
-                # Заменяем строки
-                lines[super_init_start:super_init_end + 1] = new_super_lines
+                # Заменяем только часть после .__init__(
+                # Первая строка: часть до .__init__( + новые параметры
+                before_init = lines[super_init_start][:init_open_pos + len('.__init__(')]
+                if new_init_params_lines:
+                    lines[super_init_start] = before_init + new_init_params_lines[0]
+                    # Заменяем остальные строки
+                    if len(new_init_params_lines) > 1:
+                        lines[super_init_start + 1:super_init_end + 1] = new_init_params_lines[1:]
+                    else:
+                        # Если параметры уместились в одну строку, удаляем остальные
+                        for idx in range(super_init_end, super_init_start, -1):
+                            del lines[idx]
+                else:
+                    lines[super_init_start] = before_init + new_init_params_lines[0] if new_init_params_lines else before_init + ')'
                 
-                # Теперь добавляем tools= в правильное место
-                # Ищем закрывающую скобку в новых строках
-                for i in range(super_init_start, len(lines)):
-                    if ')' in lines[i]:
-                        # Вставляем tools перед закрывающей скобкой
-                        if tools:
-                            tools_list = ', '.join(sorted(tools))
-                            bracket_pos = lines[i].rfind(')')
-                            if bracket_pos > 0:
-                                before_bracket = lines[i][:bracket_pos].rstrip()
-                                if before_bracket and not before_bracket.endswith(','):
-                                    tools_param = f', tools=[{tools_list}]'
-                                else:
-                                    tools_param = f'tools=[{tools_list}]'
-                                lines[i] = lines[i][:bracket_pos] + tools_param + lines[i][bracket_pos:]
-                            else:
-                                # Если скобка в начале строки, добавляем на предыдущей строке
-                                if i > super_init_start:
-                                    prev_line = lines[i - 1].rstrip()
-                                    if prev_line and not prev_line.endswith(','):
-                                        tools_param = f', tools=[{tools_list}]'
-                                    else:
-                                        tools_param = f'tools=[{tools_list}]'
-                                    lines[i - 1] = prev_line + tools_param + '\n'
+                # Теперь добавляем tools= в правильное место - ТОЛЬКО в параметры __init__
+                # Ищем закрывающую скобку __init__ в обновленных строках
+                for i in range(super_init_start, min(super_init_start + 15, len(lines))):
+                    if '.__init__(' in lines[i]:
+                        # Нашли .__init__(, ищем закрывающую скобку
+                        init_pos = lines[i].find('.__init__(')
+                        paren_count = 0
+                        found_init_open = False
+                        
+                        for j in range(i, min(i + 15, len(lines))):
+                            start_char = 0
+                            if j == i:
+                                start_char = init_pos + len('.__init__(')
+                            
+                            for char_idx in range(start_char, len(lines[j])):
+                                char = lines[j][char_idx]
+                                if char == '(':
+                                    paren_count += 1
+                                    found_init_open = True
+                                elif char == ')':
+                                    paren_count -= 1
+                                    if paren_count == 0 and found_init_open:
+                                        # Нашли закрывающую скобку __init__
+                                        if tools:
+                                            quoted_tools = ['"' + tool + '"' for tool in sorted(tools)]
+                                            tools_list = ', '.join(quoted_tools)
+                                            
+                                            before_bracket = lines[j][:char_idx].rstrip()
+                                            if before_bracket and not before_bracket.endswith('('):
+                                                if not before_bracket.endswith(','):
+                                                    tools_param = f', tools=[{tools_list}]'
+                                                else:
+                                                    tools_param = f' tools=[{tools_list}]'
+                                            else:
+                                                tools_param = f'tools=[{tools_list}]'
+                                            
+                                            lines[j] = lines[j][:char_idx] + tools_param + lines[j][char_idx:]
+                                        break
+                            if paren_count == 0:
+                                break
                         break
             
             # Сохраняем файл

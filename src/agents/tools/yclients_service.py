@@ -22,6 +22,11 @@ class ServiceDetails(BaseModel):
     name: str = Field(default="")
     staff: List[Master] = Field(default_factory=list)
     duration: int = Field(default=0, description="Продолжительность услуги в секундах")
+    category_id: Optional[int] = Field(default=None)
+    price_min: Optional[float] = Field(default=None)
+    price_max: Optional[float] = Field(default=None)
+    active: bool = Field(default=True)
+    comment: Optional[str] = Field(default=None)
     
     def get_title(self) -> str:
         """Возвращает title или name в зависимости от того, что заполнено"""

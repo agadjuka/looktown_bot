@@ -145,6 +145,7 @@ class ToolLoader:
             ('client_records_logic.py', 'src.agents.tools.client_records_logic'),
             ('cancel_booking_logic.py', 'src.agents.tools.cancel_booking_logic'),
             ('reschedule_booking_logic.py', 'src.agents.tools.reschedule_booking_logic'),
+            ('view_service_logic.py', 'src.agents.tools.view_service_logic'),
         ]
         
         for dep_file, dep_module_name in dependencies:
