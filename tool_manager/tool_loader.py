@@ -138,6 +138,7 @@ class ToolLoader:
             ('services_data_loader.py', 'src.agents.tools.services_data_loader'),
             ('yclients_service.py', 'src.agents.tools.yclients_service'),
             ('book_times_logic.py', 'src.agents.tools.book_times_logic'),
+            ('find_slots_logic.py', 'src.agents.tools.find_slots_logic'),
             ('phone_utils.py', 'src.agents.tools.phone_utils'),
             ('create_booking_logic.py', 'src.agents.tools.create_booking_logic'),
             ('service_master_mapper.py', 'src.agents.tools.service_master_mapper'),

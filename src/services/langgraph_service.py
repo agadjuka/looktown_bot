@@ -122,13 +122,26 @@ class LangGraphService:
         
         Args:
             instruction: Инструкция для ассистента
-            tools: Список инструментов
+            tools: Список инструментов (уже созданные через sdk.tools.function)
             name: Имя ассистента
             skip_ydb_save: Если True, не сохраняет ID в YDB (для Playground)
         """
         kwargs = {}
         if tools and len(tools) > 0:
             kwargs = {"tools": tools}
+            # Логируем, что реально передается в SDK
+            logger.debug(f"Создание Assistant с {len(tools)} инструментами")
+            for i, tool in enumerate(tools):
+                if hasattr(tool, 'function'):
+                    func = tool.function
+                    tool_name = getattr(func, 'name', 'UNKNOWN')
+                    tool_desc_len = len(getattr(func, 'description', ''))
+                    params = getattr(func, 'parameters', None)
+                    if isinstance(params, dict):
+                        params_size = len(str(params))
+                    else:
+                        params_size = len(str(params)) if params else 0
+                    logger.debug(f"  Tool {i+1}: {tool_name}, description: {tool_desc_len} символов, parameters: {params_size} символов")
         
         # Добавляем имя если указано
         if name:

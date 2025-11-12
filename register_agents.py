@@ -56,7 +56,7 @@ def parse_agent_file(file_path: Path) -> dict:
         
         # Список всех доступных инструментов
         valid_tools = {
-            'GetCategories', 'GetServices', 'BookTimes', 'CreateBooking', 'ViewService', 'FindMasterByService',  # из service_tools
+            'GetCategories', 'GetServices', 'BookTimes', 'FindSlots', 'CreateBooking', 'ViewService', 'FindMasterByService',  # из service_tools
             'GetClientRecords',  # из client_records_tools
             'RescheduleBooking',  # из reschedule_booking_tools
             'CancelBooking',  # из cancel_booking_tools
@@ -171,7 +171,7 @@ def register_all_agents(force: bool = False):
                 if agent['tools']:
                     logger.info(f"Найдены инструменты в агенте: {agent['tools']}")
                     try:
-                        from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, CreateBooking, ViewService, FindMasterByService
+                        from src.agents.tools.service_tools import GetCategories, GetServices, BookTimes, FindSlots, CreateBooking, ViewService, FindMasterByService
                         from src.agents.tools.client_records_tools import GetClientRecords
                         from src.agents.tools.cancel_booking_tools import CancelBooking
                         from src.agents.tools.reschedule_booking_tools import RescheduleBooking
@@ -182,6 +182,7 @@ def register_all_agents(force: bool = False):
                             'GetCategories': GetCategories,
                             'GetServices': GetServices,
                             'BookTimes': BookTimes,
+                            'FindSlots': FindSlots,
                             'CreateBooking': CreateBooking,
                             'ViewService': ViewService,
                             'FindMasterByService': FindMasterByService,

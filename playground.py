@@ -27,7 +27,7 @@ from src.services.langgraph_service import LangGraphService
 from src.graph.booking_graph import BookingGraph
 from src.graph.booking_state import BookingState
 from src.agents.dialogue_stages import DialogueStage
-from src.services.llm_logger import llm_logger
+from src.services.llm_request_logger import llm_request_logger
 
 # Перехватываем вызовы инструментов через monkey patching
 def patch_base_agent():
@@ -97,22 +97,22 @@ with st.sidebar:
         st.info(f"**Thread ID:**\n`{st.session_state.thread.id}`")
     
     # Информация о текущем файле лога (если есть активный запрос)
-    if llm_logger.current_log_file:
-        log_file_name = llm_logger.current_log_file.name
+    if llm_request_logger.current_log_file:
+        log_file_name = llm_request_logger.current_log_file.name
         st.info(f"**Текущий лог файл:**\n`{log_file_name}`")
     
     # Кнопка сброса диалога
     if st.button("🔄 Сбросить диалог", type="secondary"):
         # Закрываем текущий файл лога если есть
-        if llm_logger.current_log_file:
+        if llm_request_logger.current_log_file:
             try:
-                with open(llm_logger.current_log_file, 'a', encoding='utf-8') as f:
+                with open(llm_request_logger.current_log_file, 'a', encoding='utf-8') as f:
                     f.write(f"\n{'='*80}\n")
                     f.write(f"DIALOG RESET BY USER\n")
                     f.write(f"{'='*80}\n")
             except:
                 pass
-            llm_logger.current_log_file = None
+            llm_request_logger.current_log_file = None
         
         st.session_state.thread = st.session_state.langgraph_service.create_thread()
         st.session_state.messages = []
@@ -222,7 +222,7 @@ user_input = st.chat_input("Введите сообщение...")
 
 if user_input:
     # Начинаем новый запрос - создаём новый файл лога
-    log_file = llm_logger.start_new_request()
+    log_file = llm_request_logger.start_new_request()
     
     # Добавляем сообщение пользователя
     st.session_state.messages.append({
@@ -443,7 +443,7 @@ st.markdown(f"""
 ### 📝 Информация
 - **Thread ID:** Используется для сохранения контекста диалога
 - **Стадии:** {stages_text}
-- **Инструменты:** `GetCategories`, `GetServices`, `BookTimes`
+- **Инструменты:** `GetCategories`, `GetServices`, `BookTimes`, `FindSlots`
 - **Агенты:** {agents_text}
 """)
 

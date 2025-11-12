@@ -2,6 +2,7 @@
 Базовый класс для агентов
 """
 import json
+from datetime import datetime
 from typing import Optional, Dict, Any
 from yandex_cloud_ml_sdk._threads.thread import Thread
 from yandex_cloud_ml_sdk._assistants.assistant import Assistant
@@ -9,7 +10,7 @@ from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
 from ..services.error_checker import ErrorChecker
 from ..services.call_manager_service import CallManagerService
-from ..services.llm_logger import llm_logger
+from ..services.llm_request_logger import llm_request_logger
 
 
 class BaseAgent:
@@ -29,14 +30,27 @@ class BaseAgent:
         
         if assistant:
             self.assistant = assistant
+            # Если assistant передан извне, получаем инструменты из него
+            # и сохраняем классы инструментов для вызова (если они были переданы)
+            if tools:
+                self.tools = {x.__name__: x for x in tools}
+            else:
+                self.tools = {}
+            # Получаем объекты SDK инструментов из assistant
+            self.sdk_tools = getattr(assistant, 'tools', [])
         else:
             # Создаём инструменты
             tool_list = []
             if tools:
+                # Сохраняем классы инструментов для вызова
                 self.tools = {x.__name__: x for x in tools}
+                # Создаём объекты SDK инструментов для передачи в Assistant и логирования
                 tool_list = [langgraph_service.sdk.tools.function(x) for x in tools]
+                # Сохраняем объекты SDK инструментов для логирования
+                self.sdk_tools = tool_list
             else:
                 self.tools = {}
+                self.sdk_tools = []
             
             # Создаём Assistant с именем (или используем существующего)
             self.assistant = langgraph_service.get_or_create_assistant(
@@ -122,7 +136,16 @@ class BaseAgent:
             if not message_added:
                 # Логируем сообщение пользователя ПЕРЕД добавлением в thread
                 thread_id = getattr(thread, 'id', None)
-                llm_logger.log_user_message(message, thread_id)
+                # Логируем реальное сообщение пользователя
+                llm_request_logger.start_new_request()  # Начинаем новый запрос
+                timestamp = datetime.now().isoformat()
+                log_entry = f"\n{'='*80}\n"
+                log_entry += f"[{timestamp}] USER MESSAGE (EXACT DATA SENT TO API)\n"
+                log_entry += f"{'='*80}\n"
+                if thread_id:
+                    log_entry += f"Thread ID: {thread_id}\n"
+                log_entry += f"Message:\n{message}\n"
+                llm_request_logger._write_raw(log_entry)
                 # Добавляем сообщение в thread (это то, что реально отправляется в LLM)
                 thread.write(message)
             
@@ -135,19 +158,21 @@ class BaseAgent:
             
             # Получаем instruction и tools для логирования
             instruction = self.instruction
-            tools = getattr(self, 'tools', {})
-            tool_list = list(tools.values()) if tools else []
+            # Для логирования используем исходные классы инструментов, чтобы получить их JSON схемы
+            # SDK объекты не дают прямого доступа к схеме, поэтому используем исходные классы
+            tool_classes = list(self.tools.values()) if self.tools else []
+            sdk_tools = getattr(self, 'sdk_tools', [])
             
-            # Логируем запуск ассистента
+            # Логируем реальный запрос к LLM - то, что реально отправляется через API
             thread_id = getattr(thread, 'id', None)
-            llm_logger.log_assistant_run_start(
+            assistant_id = getattr(self.assistant, 'id', None)
+            llm_request_logger.log_request_to_llm(
                 agent_name=self.agent_name,
                 thread_id=thread_id,
+                assistant_id=assistant_id,
                 instruction=instruction,
-                tools=tool_list,
-                thread_messages=thread_messages,
-                assistant_obj=self.assistant,
-                thread_obj=thread
+                tools=tool_classes,  # Передаем классы для извлечения JSON схемы
+                messages=thread_messages
             )
             
             # Запускаем Assistant
@@ -156,11 +181,12 @@ class BaseAgent:
             
             res = run.wait()
             
-            # Логируем ответ от LLM
+            # Логируем реальный ответ от LLM - то, что реально получено от API
             try:
                 res_text = getattr(res, 'text', None) if res else None
                 res_tool_calls = getattr(res, 'tool_calls', None) if res else None
-                llm_logger.log_llm_response(
+                
+                llm_request_logger.log_response_from_llm(
                     agent_name=self.agent_name,
                     response_text=res_text,
                     tool_calls=res_tool_calls if res_tool_calls else None,
@@ -318,7 +344,7 @@ class BaseAgent:
                                                 # Логируем результаты инструментов перед отправкой в LLM
                                                 tool_result_data = [{"name": tool_found, "content": tool_result}]
                                                 try:
-                                                    llm_logger.log_tool_results(
+                                                    llm_request_logger.log_tool_results_to_llm(
                                                         agent_name=self.agent_name,
                                                         tool_results=tool_result_data
                                                     )
@@ -348,7 +374,7 @@ class BaseAgent:
                                                 try:
                                                     res_text = getattr(res, 'text', None) if res else None
                                                     res_tool_calls = getattr(res, 'tool_calls', None) if res else None
-                                                    llm_logger.log_llm_response(
+                                                    llm_request_logger.log_response_from_llm(
                                                         agent_name=self.agent_name,
                                                         response_text=res_text,
                                                         tool_calls=res_tool_calls if res_tool_calls else None,
@@ -529,7 +555,7 @@ class BaseAgent:
                 if result:
                     # Логируем результаты инструментов перед отправкой в LLM
                     try:
-                        llm_logger.log_tool_results(
+                        llm_request_logger.log_tool_results_to_llm(
                             agent_name=self.agent_name,
                             tool_results=result
                         )
@@ -543,7 +569,7 @@ class BaseAgent:
                     try:
                         res_text = getattr(res, 'text', None) if res else None
                         res_tool_calls = getattr(res, 'tool_calls', None) if res else None
-                        llm_logger.log_llm_response(
+                        llm_request_logger.log_response_from_llm(
                             agent_name=self.agent_name,
                             response_text=res_text,
                             tool_calls=res_tool_calls if res_tool_calls else None,
@@ -653,7 +679,7 @@ class BaseAgent:
             
             # Логируем ошибку в LLM лог
             try:
-                llm_logger.log_error(
+                llm_request_logger.log_error(
                     agent_name=self.agent_name,
                     error=e,
                     context=f"Message: {message[:200]}"
