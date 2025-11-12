@@ -119,7 +119,8 @@ async def find_best_slots(
     yclients_service: YclientsService, 
     service_id: int,
     date: str,
-    master_name: Optional[str] = None
+    master_name: Optional[str] = None,
+    staff_id: Optional[int] = None
 ) -> Dict[str, any]:
     """
     Находит лучшие доступные слоты для услуги.
@@ -128,7 +129,8 @@ async def find_best_slots(
         yclients_service: Экземпляр сервиса Yclients
         service_id: ID услуги
         date: Дата в формате YYYY-MM-DD
-        master_name: Имя мастера (опционально)
+        master_name: Имя мастера (опционально, игнорируется если указан staff_id)
+        staff_id: ID мастера (опционально, имеет приоритет над master_name)
         
     Returns:
         Dict с service_title, master_name (если указан) и списком интервалов
@@ -152,8 +154,22 @@ async def find_best_slots(
         if master.name != "Лист ожидания"
     ]
     
-    # 2. Если указан master_name, ищем конкретного мастера
-    if master_name:
+    # 2. Определяем мастера: приоритет у staff_id, затем master_name
+    if staff_id is not None:
+        # Ищем мастера по ID
+        found_master = next((m for m in valid_masters if m.id == staff_id), None)
+        
+        if not found_master:
+            return {
+                "service_title": service_title,
+                "slots": [],
+                "error": f"Мастер с ID {staff_id} не найден для данной услуги"
+            }
+        
+        master_ids = [found_master.id]
+        result_master_name = found_master.name
+    elif master_name:
+        # Ищем мастера по имени
         found_master = _find_master_by_name(valid_masters, master_name)
         
         if not found_master:
@@ -167,6 +183,7 @@ async def find_best_slots(
         master_ids = [found_master.id]
         result_master_name = found_master.name
     else:
+        # Используем всех валидных мастеров
         master_ids = [master.id for master in valid_masters]
         result_master_name = None
     

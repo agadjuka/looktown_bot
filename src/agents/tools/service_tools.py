@@ -148,7 +148,12 @@ class BookTimes(BaseModel):
     
     master_name: Optional[str] = Field(
         default=None,
-        description="Имя мастера (опционально). Если указано - слоты только у этого мастера."
+        description="Имя мастера (опционально). Если указано - слоты только у этого мастера. Игнорируется если указан staff_id."
+    )
+    
+    staff_id: Optional[int] = Field(
+        default=None,
+        description="ID мастера (опционально). Если указан - слоты только у этого мастера. Имеет приоритет над master_name."
     )
     
     def process(self, thread: Thread) -> str:
@@ -175,7 +180,8 @@ class BookTimes(BaseModel):
                     yclients_service=yclients_service,
                     service_id=self.service_id,
                     date=self.date,
-                    master_name=self.master_name
+                    master_name=self.master_name,
+                    staff_id=self.staff_id
                 )
             )
             

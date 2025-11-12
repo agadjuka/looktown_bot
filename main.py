@@ -60,6 +60,13 @@ except Exception as e:
     print(f"❌ Ошибка импорта time_normalizer: {e}", flush=True)
     sys.exit(1)
 
+try:
+    from src.services.retry_service import RetryService
+    print("✅ retry_service импортирован", flush=True)
+except Exception as e:
+    print(f"❌ Ошибка импорта retry_service: {e}", flush=True)
+    sys.exit(1)
+
 print("✅ ВСЕ ИМПОРТЫ УСПЕШНЫ", flush=True)
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -76,12 +83,26 @@ app = FastAPI(
 )
 
 async def send_to_agent(message_text, chat_id):
-    """Отправка сообщения агенту через LangGraph"""
-    try:
+    """Отправка сообщения агенту через LangGraph с retry на нижнем уровне"""
+    async def _execute_agent_request():
+        """Внутренняя функция для выполнения запроса к агенту"""
         logger.agent("Обработка сообщения", chat_id)
         yandex_agent_service = get_yandex_agent_service()
         response = await yandex_agent_service.send_to_agent(chat_id, message_text)
         logger.agent("Ответ получен", chat_id)
+        return response
+    
+    try:
+        # Используем RetryService для retry на нижнем уровне (async версия)
+        response = await RetryService.execute_with_retry_async(
+            operation=_execute_agent_request,
+            max_retries=3,
+            operation_name="отправка сообщения агенту",
+            context_info={
+                "chat_id": chat_id,
+                "message": message_text
+            }
+        )
         return response
     except Exception as e:
         logger.error("Ошибка при обращении к агенту", str(e))

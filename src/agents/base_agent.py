@@ -8,8 +8,6 @@ from yandex_cloud_ml_sdk._threads.thread import Thread
 from yandex_cloud_ml_sdk._assistants.assistant import Assistant
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
-from ..services.error_checker import ErrorChecker
-from ..services.call_manager_service import CallManagerService
 from ..services.llm_request_logger import llm_request_logger
 
 
@@ -67,57 +65,13 @@ class BaseAgent:
     
     def __call__(self, message: str, thread: Thread) -> str:
         """
-        Выполнение запроса к агенту с retry логикой для InternalServerError
+        Выполнение запроса к агенту
         
         :param message: Сообщение для агента
         :param thread: Thread для выполнения запроса
         :return: Ответ агента
         """
-        max_retries = 3
-        last_error = None
-        last_error_message = None
-        message_added = False  # Флаг для отслеживания добавления сообщения в thread
-        
-        for attempt in range(1, max_retries + 1):
-            try:
-                return self._execute_request(message, thread, message_added)
-            except RuntimeError as e:
-                error_message = str(e)
-                # Получаем информацию об ошибке из res.error если доступна
-                res_error = getattr(e, 'res_error', None) if hasattr(e, 'res_error') else None
-                error_to_check = res_error if res_error else error_message
-                
-                # Проверяем, является ли это InternalServerError
-                if ErrorChecker.is_internal_server_error(error_to_check):
-                    last_error = e
-                    last_error_message = error_to_check
-                    message_added = True  # Сообщение уже было добавлено при первой попытке
-                    logger.warning(
-                        f"Попытка {attempt}/{max_retries} для агента {self.agent_name}: "
-                        f"InternalServerError - повторяем запрос"
-                    )
-                    if attempt < max_retries:
-                        continue
-                    else:
-                        # После 3 неудачных попыток вызываем CallManager
-                        logger.error(
-                            f"Агент {self.agent_name}: все {max_retries} попытки завершились "
-                            f"InternalServerError. Вызываем CallManager."
-                        )
-                        CallManagerService.handle_critical_error(
-                            error_message=last_error_message or error_message,
-                            agent_name=self.agent_name,
-                            message=message,
-                            thread_id=getattr(thread, 'id', None)
-                        )
-                        # После вызова CallManager все равно выбрасываем исключение
-                        raise
-                else:
-                    # Если это не InternalServerError, сразу выбрасываем исключение
-                    raise
-            except Exception as e:
-                # Для других типов ошибок не делаем retry
-                raise
+        return self._execute_request(message, thread, message_added=False)
     
     def _execute_request(self, message: str, thread: Thread, message_added: bool = False) -> str:
         """

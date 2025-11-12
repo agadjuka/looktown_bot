@@ -7,18 +7,33 @@ from service_factory import get_yandex_agent_service
 from src.services.logger_service import logger
 from src.services.date_normalizer import normalize_dates_in_text
 from src.services.time_normalizer import normalize_times_in_text
+from src.services.retry_service import RetryService
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 
 async def send_to_agent(message_text, chat_id):
-    """Отправка сообщения агенту через LangGraph"""
-    try:
+    """Отправка сообщения агенту через LangGraph с retry на нижнем уровне"""
+    async def _execute_agent_request():
+        """Внутренняя функция для выполнения запроса к агенту"""
         logger.agent("Обработка сообщения", chat_id)
         yandex_agent_service = get_yandex_agent_service()
         response = await yandex_agent_service.send_to_agent(chat_id, message_text)
         logger.agent("Ответ получен", chat_id)
+        return response
+    
+    try:
+        # Используем RetryService для retry на нижнем уровне (async версия)
+        response = await RetryService.execute_with_retry_async(
+            operation=_execute_agent_request,
+            max_retries=3,
+            operation_name="отправка сообщения агенту",
+            context_info={
+                "chat_id": chat_id,
+                "message": message_text
+            }
+        )
         return response
     except Exception as e:
         logger.error("Ошибка при обращении к агенту", str(e))

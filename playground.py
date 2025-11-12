@@ -28,6 +28,7 @@ from src.graph.booking_graph import BookingGraph
 from src.graph.booking_state import BookingState
 from src.agents.dialogue_stages import DialogueStage
 from src.services.llm_request_logger import llm_request_logger
+from src.services.retry_service import RetryService
 
 # Перехватываем вызовы инструментов через monkey patching
 def patch_base_agent():
@@ -251,8 +252,21 @@ if user_input:
                     "used_tools": None
                 }
                 
-                # Выполняем граф
-                result_state = st.session_state.booking_graph.compiled_graph.invoke(initial_state)
+                # Функция для выполнения графа (для retry на нижнем уровне)
+                def _execute_graph():
+                    """Внутренняя функция для выполнения графа"""
+                    return st.session_state.booking_graph.compiled_graph.invoke(initial_state)
+                
+                # Выполняем граф с retry на нижнем уровне
+                result_state = RetryService.execute_with_retry(
+                    operation=_execute_graph,
+                    max_retries=3,
+                    operation_name="выполнение графа в Playground",
+                    context_info={
+                        "message": user_input,
+                        "chat_id": getattr(st.session_state.thread, 'id', None)
+                    }
+                )
                 
                 # Завершаем запрос - добавляем финальную запись в лог
                 try:

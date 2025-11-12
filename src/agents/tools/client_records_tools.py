@@ -250,7 +250,11 @@ class GetClientRecords(BaseModel):
                     # ID записи
                     record_id = record.get('record_id')
                     if record_id:
-                        record_info += f"ID записи: {record_id}"
+                        record_info += f"ID записи: {record_id}\n   "
+                    
+                    # ID клиента
+                    if client_id:
+                        record_info += f"ID клиента: {client_id}"
                     
                     result_text += record_info + "\n"
             
