@@ -58,7 +58,7 @@ class RetryService:
         :param context_info: Дополнительная информация для контекста (chat_id, message и т.д.)
         :return: Результат выполнения операции
         """
-        return RetryService._execute_with_retry_async(
+        return await RetryService._execute_with_retry_async(
             operation, max_retries, operation_name, context_info
         )
     
