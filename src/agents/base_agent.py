@@ -9,6 +9,7 @@ from yandex_cloud_ml_sdk._assistants.assistant import Assistant
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
 from ..services.llm_request_logger import llm_request_logger
+from ..services.tool_history_service import get_tool_history_service
 
 
 class BaseAgent:
@@ -88,6 +89,23 @@ class BaseAgent:
             
             # Добавляем сообщение в Thread только если оно еще не было добавлено (при retry не дублируем)
             if not message_added:
+                # Получаем chat_id из thread (если он был сохранен)
+                chat_id = getattr(thread, 'chat_id', None)
+                
+                # Если есть chat_id, добавляем историю результатов инструментов в контекст
+                if chat_id:
+                    try:
+                        tool_history_service = get_tool_history_service()
+                        tool_history_context = tool_history_service.format_tool_results_for_context(chat_id)
+                        
+                        if tool_history_context:
+                            # Добавляем историю результатов инструментов в thread перед сообщением пользователя
+                            # Это поможет агенту использовать результаты из предыдущих циклов
+                            thread.write(f"[Контекст из предыдущих циклов]\n{tool_history_context}")
+                            logger.debug(f"Добавлена история результатов инструментов в контекст для chat_id={chat_id}")
+                    except Exception as e:
+                        logger.debug(f"Ошибка при добавлении истории результатов инструментов в контекст: {e}")
+                
                 # Логируем сообщение пользователя ПЕРЕД добавлением в thread
                 thread_id = getattr(thread, 'id', None)
                 # Логируем реальное сообщение пользователя
@@ -618,6 +636,24 @@ class BaseAgent:
                 
                 logger.debug(f"  - res.text значение: {repr(res_text[:200]) if res_text else 'None/Empty'}")
                 logger.debug(f"Успешно получен ответ от агента {self.agent_name}, длина текста: {len(res_text)}")
+                
+                # Сохраняем результаты инструментов в историю после успешного выполнения агента
+                try:
+                    chat_id = getattr(thread, 'chat_id', None)
+                    if chat_id and self._last_tool_calls:
+                        tool_history_service = get_tool_history_service()
+                        tool_history_service.save_tool_results(
+                            chat_id=chat_id,
+                            tool_results=self._last_tool_calls,
+                            cycle_metadata={
+                                "agent_name": self.agent_name,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                        )
+                        logger.debug(f"Сохранены результаты инструментов в историю для chat_id={chat_id}, инструментов: {len(self._last_tool_calls)}")
+                except Exception as e:
+                    logger.debug(f"Ошибка при сохранении результатов инструментов в историю: {e}")
+                
                 return res_text
             except (ValueError, AttributeError) as e:
                 error_msg = f"Не удалось получить res.text: {e}"

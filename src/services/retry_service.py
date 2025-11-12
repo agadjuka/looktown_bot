@@ -6,7 +6,7 @@ import inspect
 import asyncio
 from ..services.error_checker import ErrorChecker
 from ..services.logger_service import logger
-from ..services.call_manager_service import CallManagerService
+from ..services.call_manager_service import CallManagerService, CallManagerException
 
 T = TypeVar('T')
 
@@ -109,14 +109,16 @@ class RetryService:
                         message = context_info.get('message') if context_info else None
                         agent_name = context_info.get('agent_name') if context_info else operation_name
                         
-                        CallManagerService.handle_critical_error(
+                        # Вызываем CallManager и получаем результат эскалации
+                        escalation_result = CallManagerService.handle_critical_error(
                             error_message=last_error_message or error_message,
                             agent_name=agent_name,
                             message=message or "Не указано",
                             thread_id=chat_id
                         )
-                        # После вызова CallManager все равно выбрасываем исключение
-                        raise
+                        # Выбрасываем специальное исключение с результатом эскалации
+                        # Это исключение будет обработано на нижнем уровне (playground/bot)
+                        raise CallManagerException(escalation_result)
                 else:
                     # Если это не InternalServerError, сразу выбрасываем исключение
                     raise
@@ -175,14 +177,16 @@ class RetryService:
                         message = context_info.get('message') if context_info else None
                         agent_name = context_info.get('agent_name') if context_info else operation_name
                         
-                        CallManagerService.handle_critical_error(
+                        # Вызываем CallManager и получаем результат эскалации
+                        escalation_result = CallManagerService.handle_critical_error(
                             error_message=last_error_message or error_message,
                             agent_name=agent_name,
                             message=message or "Не указано",
                             thread_id=chat_id
                         )
-                        # После вызова CallManager все равно выбрасываем исключение
-                        raise
+                        # Выбрасываем специальное исключение с результатом эскалации
+                        # Это исключение будет обработано на нижнем уровне (playground/bot)
+                        raise CallManagerException(escalation_result)
                 else:
                     # Если это не InternalServerError, сразу выбрасываем исключение
                     raise

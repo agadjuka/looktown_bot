@@ -8,6 +8,7 @@ from src.services.logger_service import logger
 from src.services.date_normalizer import normalize_dates_in_text
 from src.services.time_normalizer import normalize_times_in_text
 from src.services.retry_service import RetryService
+from src.services.call_manager_service import CallManagerException
 
 load_dotenv()
 
@@ -35,6 +36,10 @@ async def send_to_agent(message_text, chat_id):
             }
         )
         return response
+    except CallManagerException as e:
+        # Обрабатываем вызов CallManager - возвращаем результат эскалации
+        logger.info("CallManager был вызван из-за критической ошибки")
+        return e.escalation_result
     except Exception as e:
         logger.error("Ошибка при обращении к агенту", str(e))
         return {"user_message": f"Ошибка при обращении к агенту: {str(e)}"}

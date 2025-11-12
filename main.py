@@ -62,6 +62,7 @@ except Exception as e:
 
 try:
     from src.services.retry_service import RetryService
+    from src.services.call_manager_service import CallManagerException
     print("✅ retry_service импортирован", flush=True)
 except Exception as e:
     print(f"❌ Ошибка импорта retry_service: {e}", flush=True)
@@ -104,6 +105,10 @@ async def send_to_agent(message_text, chat_id):
             }
         )
         return response
+    except CallManagerException as e:
+        # Обрабатываем вызов CallManager - возвращаем результат эскалации
+        logger.info("CallManager был вызван из-за критической ошибки")
+        return e.escalation_result
     except Exception as e:
         logger.error("Ошибка при обращении к агенту", str(e))
         return {"user_message": f"Ошибка при обращении к агенту: {str(e)}"}

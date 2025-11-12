@@ -55,46 +55,36 @@ class StageDetectorAgent(BaseAgent):
     
     def detect_stage(self, message: str, thread: Thread) -> StageDetection:
         """Определение стадии диалога"""
-        try:
-            logger.debug(f"Начало определения стадии для сообщения: {message[:100]}")
-            thread_id = thread.id if thread and hasattr(thread, "id") else "N/A"
-            logger.debug(f"Thread ID: {thread_id}")
-            
-            # Вызываем базовый метод агента
-            response = self(message, thread)
-            
-            logger.debug(f"Получен ответ от агента определения стадии: {response[:200] if response else 'None/Empty'}")
-            
-            # Если CallManager был вызван, BaseAgent вернет "[CALL_MANAGER_RESULT]"
-            # Это будет обработано в графе через проверку _call_manager_result
-            # Здесь мы просто возвращаем валидную стадию, граф сам обработает CallManager
-            if response == "[CALL_MANAGER_RESULT]":
-                logger.info("CallManager был вызван в StageDetectorAgent")
-                # Возвращаем валидную стадию, граф обработает CallManager через _call_manager_result
-                return StageDetection(stage=DialogueStage.GREETING.value)
-            
-            # Парсим ответ
-            detection = self._parse_response(response)
-            
-            logger.debug(f"Распознана стадия: {detection.stage}")
-            
-            # Валидируем стадию
-            if detection.stage not in [stage.value for stage in DialogueStage]:
-                logger.warning(f"Неизвестная стадия: {detection.stage}, устанавливаю greeting")
-                logger.warning(f"Доступные стадии: {[stage.value for stage in DialogueStage]}")
-                detection.stage = DialogueStage.GREETING.value
-            
-            return detection
-            
-        except Exception as e:
-            import traceback
-            error_traceback = traceback.format_exc()
-            logger.error(f"Ошибка при определении стадии: {e}")
-            logger.error(f"Тип ошибки: {type(e).__name__}")
-            logger.error(f"Сообщение: {message[:200]}")
-            logger.error(f"Thread ID: {thread.id if thread and hasattr(thread, 'id') else 'N/A'}")
-            logger.error(f"Traceback:\n{error_traceback}")
+        # Не обрабатываем исключения здесь - пробрасываем их дальше на нижний уровень
+        logger.debug(f"Начало определения стадии для сообщения: {message[:100]}")
+        thread_id = thread.id if thread and hasattr(thread, "id") else "N/A"
+        logger.debug(f"Thread ID: {thread_id}")
+        
+        # Вызываем базовый метод агента - исключения пробрасываются дальше
+        response = self(message, thread)
+        
+        logger.debug(f"Получен ответ от агента определения стадии: {response[:200] if response else 'None/Empty'}")
+        
+        # Если CallManager был вызван, BaseAgent вернет "[CALL_MANAGER_RESULT]"
+        # Это будет обработано в графе через проверку _call_manager_result
+        # Здесь мы просто возвращаем валидную стадию, граф сам обработает CallManager
+        if response == "[CALL_MANAGER_RESULT]":
+            logger.info("CallManager был вызван в StageDetectorAgent")
+            # Возвращаем валидную стадию, граф обработает CallManager через _call_manager_result
             return StageDetection(stage=DialogueStage.GREETING.value)
+        
+        # Парсим ответ
+        detection = self._parse_response(response)
+        
+        logger.debug(f"Распознана стадия: {detection.stage}")
+        
+        # Валидируем стадию
+        if detection.stage not in [stage.value for stage in DialogueStage]:
+            logger.warning(f"Неизвестная стадия: {detection.stage}, устанавливаю greeting")
+            logger.warning(f"Доступные стадии: {[stage.value for stage in DialogueStage]}")
+            detection.stage = DialogueStage.GREETING.value
+        
+        return detection
     
     def _parse_response(self, response: str) -> StageDetection:
         """Парсинг ответа агента в StageDetection"""

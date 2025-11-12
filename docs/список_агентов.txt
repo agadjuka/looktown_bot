@@ -1,0 +1,27 @@
+СПИСОК АГЕНТОВ
+
+1. StageDetectorAgent
+   Название: Определитель стадий диалога
+
+2. GreetingAgent
+   Название: Агент приветствия
+
+3. InformationGatheringAgent
+   Название: Агент сбора информации
+
+4. BookingAgent
+   Название: Агент бронирования
+
+5. BookingToMasterAgent
+   Название: Агент бронирования к мастеру
+
+6. CancelBookingAgent
+   Название: Агент отмены бронирований
+
+7. RescheduleAgent
+   Название: Агент переноса бронирований
+
+8. ViewMyBookingAgent
+   Название: Агент просмотра записей
+
+

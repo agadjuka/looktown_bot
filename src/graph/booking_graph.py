@@ -117,7 +117,7 @@ class BookingGraph:
         if thread and chat_id:
             thread.chat_id = chat_id
         
-        # Определяем стадию
+        # Определяем стадию - пробрасываем исключения дальше (не обрабатываем здесь)
         stage_detection = self.stage_detector.detect_stage(message, thread)
         
         # Проверяем, был ли вызван CallManager в StageDetectorAgent
@@ -207,6 +207,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.greeting_agent(message, thread)
         return self._process_agent_result(self.greeting_agent, answer, state, "GreetingAgent")
     
@@ -217,6 +218,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.information_gathering_agent(message, thread)
         return self._process_agent_result(self.information_gathering_agent, answer, state, "InformationGatheringAgent")
     
@@ -227,6 +229,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.booking_agent(message, thread)
         return self._process_agent_result(self.booking_agent, answer, state, "BookingAgent")
     
@@ -237,6 +240,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.booking_to_master_agent(message, thread)
         return self._process_agent_result(self.booking_to_master_agent, answer, state, "BookingToMasterAgent")
     
@@ -247,6 +251,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.cancel_agent(message, thread)
         return self._process_agent_result(self.cancel_agent, answer, state, "CancelBookingAgent")
     
@@ -257,6 +262,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.reschedule_agent(message, thread)
         return self._process_agent_result(self.reschedule_agent, answer, state, "RescheduleAgent")
     
@@ -267,6 +273,7 @@ class BookingGraph:
         message = state["message"]
         thread = state["thread"]
         
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
         answer = self.view_my_booking_agent(message, thread)
         return self._process_agent_result(self.view_my_booking_agent, answer, state, "ViewMyBookingAgent")
     

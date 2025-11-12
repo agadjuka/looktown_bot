@@ -185,6 +185,16 @@ class YandexAgentService:
                 self.ydb_client.reset_thread,
                 chat_id
             )
+            
+            # Очищаем историю результатов инструментов
+            try:
+                from ..services.tool_history_service import get_tool_history_service
+                tool_history_service = get_tool_history_service()
+                tool_history_service.clear_history(chat_id)
+                logger.debug(f"История результатов инструментов очищена для chat_id={chat_id}")
+            except Exception as e:
+                logger.debug(f"Ошибка при очистке истории результатов инструментов: {e}")
+            
             logger.ydb("Контекст сброшен", chat_id)
         except Exception as e:
             logger.error("Ошибка при сбросе контекста", str(e))

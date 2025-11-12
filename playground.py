@@ -29,6 +29,7 @@ from src.graph.booking_state import BookingState
 from src.agents.dialogue_stages import DialogueStage
 from src.services.llm_request_logger import llm_request_logger
 from src.services.retry_service import RetryService
+from src.services.call_manager_service import CallManagerException
 
 # Перехватываем вызовы инструментов через monkey patching
 def patch_base_agent():
@@ -392,6 +393,42 @@ if user_input:
                     for msg in reversed(thread_messages[-10:]):
                         role_emoji = "👤" if msg.author.role == "USER" else "🤖"
                         st.text(f"{role_emoji} **{msg.author.role}:** {msg.text[:300]}")
+                
+            except CallManagerException as e:
+                # Обрабатываем вызов CallManager - показываем сообщение пользователю и alert менеджеру
+                escalation_result = e.escalation_result
+                user_message = escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера.")
+                manager_alert = escalation_result.get("manager_alert")
+                
+                # Завершаем запрос с CallManager
+                try:
+                    with open(log_file, 'a', encoding='utf-8') as f:
+                        f.write(f"\n{'='*80}\n")
+                        f.write(f"REQUEST COMPLETED WITH CALL_MANAGER\n")
+                        f.write(f"User Message: {user_message}\n")
+                        if manager_alert:
+                            f.write(f"Manager Alert: {manager_alert[:200]}\n")
+                        f.write(f"{'='*80}\n")
+                except Exception:
+                    pass
+                
+                # Показываем сообщение пользователю
+                st.markdown(user_message)
+                
+                # Показываем alert менеджера если есть
+                if manager_alert:
+                    st.warning(f"**Alert для менеджера:** {manager_alert}")
+                
+                # Добавляем сообщение ассистента
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": user_message,
+                    "timestamp": datetime.now().isoformat(),
+                    "metadata": {
+                        "call_manager": True,
+                        "manager_alert": manager_alert
+                    }
+                })
                 
             except Exception as e:
                 # Завершаем запрос с ошибкой
