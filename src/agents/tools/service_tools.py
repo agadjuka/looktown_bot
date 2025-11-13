@@ -223,14 +223,16 @@ class FindSlots(BaseModel):
     Используй когда клиент хочет найти время в определенный период (утром, днем, вечером) 
     или в определенном интервале дат. Этот инструмент более гибкий чем BookTimes - он может 
     искать слоты на несколько дней вперед и фильтровать по времени суток.
+    Если time_period не указан, инструмент найдет ближайшие доступные слоты без фильтрации по времени.
     """
     
     service_id: int = Field(
         description="ID услуги (число, обязательное поле). Получи из GetServices - каждая услуга имеет формат 'Название (ID: число)'."
     )
     
-    time_period: str = Field(
-        description="Период времени (обязательное поле). Поддерживаемые форматы: 'morning' (9:00-11:00), 'day' (11:00-17:00), 'evening' (17:00-22:00); конкретное время '16:00' или '16.00' (окно 30 минут); интервал '16:00-19:00' или '16.00-19.00'; 'before 11:00' (до 11:00); 'after 16:00' (после 16:00). Используй когда клиент просит время в определенный период или интервал."
+    time_period: Optional[str] = Field(
+        default=None,
+        description="Период времени (необязательное поле). Если не указан, будут найдены ближайшие доступные слоты без фильтрации по времени. Поддерживаемые форматы: 'morning' (9:00-11:00), 'day' (11:00-17:00), 'evening' (17:00-22:00); конкретное время '16:00' или '16.00' (окно 30 минут); интервал '16:00-19:00' или '16.00-19.00'; 'before 11:00' (до 11:00); 'after 16:00' (после 16:00). Используй когда клиент просит время в определенный период или интервал."
     )
     
     master_name: Optional[str] = Field(
@@ -271,7 +273,7 @@ class FindSlots(BaseModel):
                 find_slots_by_period(
                     yclients_service=yclients_service,
                     service_id=self.service_id,
-                    time_period=self.time_period,
+                    time_period=self.time_period or "",
                     master_name=self.master_name,
                     master_id=self.master_id,
                     date_range=self.date_range
@@ -289,27 +291,35 @@ class FindSlots(BaseModel):
             
             if not results:
                 # Форматируем название периода для вывода
-                period_display = self._format_time_period_display(time_period)
+                if time_period:
+                    period_display = self._format_time_period_display(time_period)
+                    period_text = f" {period_display}"
+                else:
+                    period_text = ""
                 
                 if master_name:
                     if self.date_range:
-                        return f"К сожалению, у мастера {master_name} нет свободных слотов {period_display} для услуги '{service_title}' в указанный период."
+                        return f"К сожалению, у мастера {master_name} нет свободных слотов{period_text} для услуги '{service_title}' в указанный период."
                     else:
-                        return f"К сожалению, у мастера {master_name} нет свободных слотов {period_display} для услуги '{service_title}' в ближайшие дни."
+                        return f"К сожалению, у мастера {master_name} нет свободных слотов{period_text} для услуги '{service_title}' в ближайшие дни."
                 else:
                     if self.date_range:
-                        return f"К сожалению, нет свободных слотов {period_display} для услуги '{service_title}' в указанный период."
+                        return f"К сожалению, нет свободных слотов{period_text} для услуги '{service_title}' в указанный период."
                     else:
-                        return f"К сожалению, нет свободных слотов {period_display} для услуги '{service_title}' в ближайшие дни."
+                        return f"К сожалению, нет свободных слотов{period_text} для услуги '{service_title}' в ближайшие дни."
             
             # Форматируем список результатов по датам
-            period_display = self._format_time_period_display(time_period)
+            if time_period:
+                period_display = self._format_time_period_display(time_period)
+                period_text = f" {period_display}"
+            else:
+                period_text = ""
             
             result_lines = []
             if master_name:
-                result_lines.append(f"Доступные слоты {period_display} у мастера {master_name} для услуги '{service_title}':\n")
+                result_lines.append(f"Доступные слоты{period_text} у мастера {master_name} для услуги '{service_title}':\n")
             else:
-                result_lines.append(f"Доступные слоты {period_display} для услуги '{service_title}':\n")
+                result_lines.append(f"Доступные слоты{period_text} для услуги '{service_title}':\n")
             
             for day_result in results:
                 date = day_result['date']

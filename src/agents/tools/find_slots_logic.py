@@ -214,11 +214,12 @@ async def find_slots_by_period(
 ) -> Dict[str, any]:
     """
     Находит доступные слоты для услуги с фильтрацией по периоду времени.
+    Если time_period пустой или None, находит ближайшие доступные слоты без фильтрации по времени.
     
     Args:
         yclients_service: Экземпляр сервиса Yclients
         service_id: ID услуги
-        time_period: Период времени ("morning", "day", "evening")
+        time_period: Период времени ("morning", "day", "evening") или пустая строка для поиска всех слотов
         master_name: Имя мастера (опционально)
         master_id: ID мастера (опционально)
         date_range: Интервал дат в формате "YYYY-MM-DD:YYYY-MM-DD" (опционально)
@@ -230,13 +231,17 @@ async def find_slots_by_period(
         - results: Список результатов по датам
         - error: Сообщение об ошибке (если есть)
     """
-    # Валидация периода времени (проверяем, что можем распарсить)
-    try:
-        _get_time_period_bounds(time_period)
-    except Exception as e:
-        return {
-            "error": f"Неверный формат периода времени: {time_period}. Поддерживаемые форматы: 'morning', 'day', 'evening', '16:00', '16:00-19:00', 'before 11:00', 'after 16:00'. Ошибка: {str(e)}"
-        }
+    # Если time_period пустой или None, пропускаем валидацию
+    filter_by_time = bool(time_period and time_period.strip())
+    
+    # Валидация периода времени (проверяем, что можем распарсить, только если указан)
+    if filter_by_time:
+        try:
+            _get_time_period_bounds(time_period)
+        except Exception as e:
+            return {
+                "error": f"Неверный формат периода времени: {time_period}. Поддерживаемые форматы: 'morning', 'day', 'evening', '16:00', '16:00-19:00', 'before 11:00', 'after 16:00'. Ошибка: {str(e)}"
+            }
     
     # 1. Получаем детали услуги
     try:
@@ -359,13 +364,14 @@ async def find_slots_by_period(
             for slot in response.data:
                 date_slots[date].add(slot.time)
     
-    # 6. Фильтруем слоты по периоду времени и объединяем в интервалы
-    # Получаем границы периода времени для фильтрации
-    start_bound, end_bound = _get_time_period_bounds(time_period)
-    
+    # 6. Фильтруем слоты по периоду времени (если указан) и объединяем в интервалы
     results = []
     days_found = 0
     target_days = 3 if not date_range else len(dates_to_check)
+    
+    # Получаем границы периода времени для фильтрации (только если указан период)
+    if filter_by_time:
+        start_bound, end_bound = _get_time_period_bounds(time_period)
     
     for date in dates_to_check:
         # Если не указан date_range и нашли 3 дня с доступными слотами - останавливаемся
@@ -377,27 +383,33 @@ async def find_slots_by_period(
         if not times:
             continue
         
-        # ВАЖНО: Фильтруем отдельные временные точки ПЕРЕД объединением в интервалы
-        filtered_times = _filter_times_by_period(times, time_period)
-        
-        # Если нет подходящих временных точек - пропускаем день
-        if not filtered_times:
-            continue
-        
-        # Объединяем отфильтрованные временные точки в интервалы
-        intervals = _merge_consecutive_slots(filtered_times)
-        
-        # Дополнительная проверка интервалов (на случай если интервал частично выходит за границы)
-        final_intervals = []
-        for interval in intervals:
-            # Извлекаем время начала интервала
-            start_time_str = interval.split('-')[0].strip()
-            start_minutes = _time_to_minutes(start_time_str)
+        # Если указан период времени - фильтруем, иначе используем все временные точки
+        if filter_by_time:
+            # ВАЖНО: Фильтруем отдельные временные точки ПЕРЕД объединением в интервалы
+            filtered_times = _filter_times_by_period(times, time_period)
             
-            # Проверяем, что начало интервала попадает в нужный период
-            # Используем <= для end_bound, чтобы включить интервалы, которые начинаются точно на границе
-            if start_bound <= start_minutes <= end_bound:
-                final_intervals.append(interval)
+            # Если нет подходящих временных точек - пропускаем день
+            if not filtered_times:
+                continue
+            
+            # Объединяем отфильтрованные временные точки в интервалы
+            intervals = _merge_consecutive_slots(filtered_times)
+            
+            # Дополнительная проверка интервалов (на случай если интервал частично выходит за границы)
+            final_intervals = []
+            for interval in intervals:
+                # Извлекаем время начала интервала
+                start_time_str = interval.split('-')[0].strip()
+                start_minutes = _time_to_minutes(start_time_str)
+                
+                # Проверяем, что начало интервала попадает в нужный период
+                # Используем <= для end_bound, чтобы включить интервалы, которые начинаются точно на границе
+                if start_bound <= start_minutes <= end_bound:
+                    final_intervals.append(interval)
+        else:
+            # Если период времени не указан - используем все временные точки без фильтрации
+            intervals = _merge_consecutive_slots(times)
+            final_intervals = intervals
         
         # Если есть хотя бы один подходящий интервал - добавляем день в результаты
         if final_intervals:
@@ -409,7 +421,7 @@ async def find_slots_by_period(
     
     result = {
         "service_title": service_title,
-        "time_period": time_period,
+        "time_period": time_period if filter_by_time else "",
         "results": results
     }
     

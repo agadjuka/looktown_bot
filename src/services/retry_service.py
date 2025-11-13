@@ -85,6 +85,29 @@ class RetryService:
                 res_error = getattr(e, 'res_error', None) if hasattr(e, 'res_error') else None
                 error_to_check = res_error if res_error else error_message
                 
+                # Проверяем, нужно ли эскалировать ошибку менеджеру (без retry)
+                if ErrorChecker.should_escalate_to_manager(error_to_check) or ErrorChecker.should_escalate_to_manager(error_message):
+                    logger.error(
+                        f"{operation_name}: обнаружена ошибка, требующая эскалации менеджеру. "
+                        f"Вызываем CallManager без retry."
+                    )
+                    
+                    # Извлекаем информацию из контекста для CallManager
+                    chat_id = context_info.get('chat_id') if context_info else None
+                    message = context_info.get('message') if context_info else None
+                    agent_name = context_info.get('agent_name') if context_info else operation_name
+                    
+                    # Вызываем CallManager и получаем результат эскалации
+                    escalation_result = CallManagerService.handle_critical_error(
+                        error_message=error_to_check or error_message,
+                        agent_name=agent_name,
+                        message=message or "Не указано",
+                        thread_id=chat_id
+                    )
+                    # Выбрасываем специальное исключение с результатом эскалации
+                    # Это исключение будет обработано на нижнем уровне (playground/bot)
+                    raise CallManagerException(escalation_result)
+                
                 # Проверяем, является ли это InternalServerError
                 if ErrorChecker.is_internal_server_error(error_to_check):
                     last_error = e
@@ -152,6 +175,29 @@ class RetryService:
                 # Получаем информацию об ошибке из res.error если доступна
                 res_error = getattr(e, 'res_error', None) if hasattr(e, 'res_error') else None
                 error_to_check = res_error if res_error else error_message
+                
+                # Проверяем, нужно ли эскалировать ошибку менеджеру (без retry)
+                if ErrorChecker.should_escalate_to_manager(error_to_check) or ErrorChecker.should_escalate_to_manager(error_message):
+                    logger.error(
+                        f"{operation_name}: обнаружена ошибка, требующая эскалации менеджеру. "
+                        f"Вызываем CallManager без retry."
+                    )
+                    
+                    # Извлекаем информацию из контекста для CallManager
+                    chat_id = context_info.get('chat_id') if context_info else None
+                    message = context_info.get('message') if context_info else None
+                    agent_name = context_info.get('agent_name') if context_info else operation_name
+                    
+                    # Вызываем CallManager и получаем результат эскалации
+                    escalation_result = CallManagerService.handle_critical_error(
+                        error_message=error_to_check or error_message,
+                        agent_name=agent_name,
+                        message=message or "Не указано",
+                        thread_id=chat_id
+                    )
+                    # Выбрасываем специальное исключение с результатом эскалации
+                    # Это исключение будет обработано на нижнем уровне (playground/bot)
+                    raise CallManagerException(escalation_result)
                 
                 # Проверяем, является ли это InternalServerError
                 if ErrorChecker.is_internal_server_error(error_to_check):
