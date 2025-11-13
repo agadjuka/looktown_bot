@@ -210,6 +210,13 @@ class LLMRequestLogger:
         
         response_data = {}
         
+        # Информация о токенах (usage)
+        usage_info = self._extract_usage_info(raw_response)
+        if usage_info:
+            response_data['usage'] = usage_info
+            log_entry += f"--- TOKEN USAGE (TOKENS USED IN THIS CYCLE) ---\n"
+            log_entry += json.dumps(usage_info, ensure_ascii=False, indent=2) + "\n\n"
+        
         # Текст ответа
         if response_text is not None:
             response_data['text'] = response_text
@@ -424,6 +431,76 @@ class LLMRequestLogger:
             message_data['content'] = str(content)
         
         return message_data
+    
+    def _extract_usage_info(self, raw_response: Any) -> Optional[Dict[str, Any]]:
+        """
+        Извлечь информацию об использовании токенов из ответа LLM
+        
+        Args:
+            raw_response: Сырой объект ответа от LLM
+            
+        Returns:
+            Словарь с информацией о токенах или None
+        """
+        if not raw_response:
+            return None
+        
+        usage_info = {}
+        
+        # Проверяем различные возможные атрибуты для информации о токенах
+        possible_attrs = [
+            'usage',
+            'usage_tokens',
+            'tokens',
+            'token_usage',
+            'input_tokens',
+            'output_tokens',
+            'total_tokens',
+            'prompt_tokens',
+            'completion_tokens'
+        ]
+        
+        for attr in possible_attrs:
+            try:
+                value = getattr(raw_response, attr, None)
+                if value is not None:
+                    # Если это объект с атрибутами, пытаемся извлечь данные
+                    if hasattr(value, '__dict__'):
+                        usage_info[attr] = {
+                            k: v for k, v in value.__dict__.items() 
+                            if not k.startswith('_')
+                        }
+                    elif isinstance(value, dict):
+                        usage_info[attr] = value
+                    else:
+                        usage_info[attr] = value
+            except Exception:
+                pass
+        
+        # Также проверяем через dir() все атрибуты, связанные с токенами
+        try:
+            attrs = [attr for attr in dir(raw_response) if not attr.startswith('_')]
+            for attr in attrs:
+                attr_lower = attr.lower()
+                if 'token' in attr_lower or 'usage' in attr_lower:
+                    try:
+                        value = getattr(raw_response, attr)
+                        if value is not None and attr not in usage_info:
+                            if hasattr(value, '__dict__'):
+                                usage_info[attr] = {
+                                    k: v for k, v in value.__dict__.items() 
+                                    if not k.startswith('_')
+                                }
+                            elif isinstance(value, dict):
+                                usage_info[attr] = value
+                            else:
+                                usage_info[attr] = value
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        
+        return usage_info if usage_info else None
     
     def _extract_tool_call_data(self, tool_call: Any) -> Dict[str, Any]:
         """Извлечь данные вызова инструмента, как они реально получены от API"""

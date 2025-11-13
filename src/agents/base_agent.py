@@ -63,6 +63,9 @@ class BaseAgent:
         
         # Результат CallManager (если был вызван)
         self._call_manager_result = None
+        
+        # Флаг для отслеживания, была ли добавлена история инструментов в текущем цикле
+        self._tool_history_added = False
     
     def __call__(self, message: str, thread: Thread) -> str:
         """
@@ -86,26 +89,11 @@ class BaseAgent:
         try:
             # Очищаем предыдущие tool_calls
             self._last_tool_calls = []
+            # Сбрасываем флаг добавления истории инструментов для нового цикла
+            self._tool_history_added = False
             
             # Добавляем сообщение в Thread только если оно еще не было добавлено (при retry не дублируем)
             if not message_added:
-                # Получаем chat_id из thread (если он был сохранен)
-                chat_id = getattr(thread, 'chat_id', None)
-                
-                # Если есть chat_id, добавляем историю результатов инструментов в контекст
-                if chat_id:
-                    try:
-                        tool_history_service = get_tool_history_service()
-                        tool_history_context = tool_history_service.format_tool_results_for_context(chat_id)
-                        
-                        if tool_history_context:
-                            # Добавляем историю результатов инструментов в thread перед сообщением пользователя
-                            # Это поможет агенту использовать результаты из предыдущих циклов
-                            thread.write(f"[Контекст из предыдущих циклов]\n{tool_history_context}")
-                            logger.debug(f"Добавлена история результатов инструментов в контекст для chat_id={chat_id}")
-                    except Exception as e:
-                        logger.debug(f"Ошибка при добавлении истории результатов инструментов в контекст: {e}")
-                
                 # Логируем сообщение пользователя ПЕРЕД добавлением в thread
                 thread_id = getattr(thread, 'id', None)
                 # Логируем реальное сообщение пользователя
@@ -158,11 +146,22 @@ class BaseAgent:
                 res_text = getattr(res, 'text', None) if res else None
                 res_tool_calls = getattr(res, 'tool_calls', None) if res else None
                 
+                # Проверяем информацию о токенах в res и run
+                # Создаем объединенный объект для извлечения информации о токенах
+                usage_source = res
+                try:
+                    # Проверяем, есть ли информация о токенах в run
+                    run_attrs = [attr for attr in dir(run) if not attr.startswith('_')]
+                    if any('token' in attr.lower() or 'usage' in attr.lower() for attr in run_attrs):
+                        usage_source = run
+                except Exception:
+                    pass
+                
                 llm_request_logger.log_response_from_llm(
                     agent_name=self.agent_name,
                     response_text=res_text,
                     tool_calls=res_tool_calls if res_tool_calls else None,
-                    raw_response=res
+                    raw_response=usage_source  # Передаем объект с информацией о токенах
                 )
             except Exception as e:
                 logger.debug(f"Ошибка при логировании ответа LLM: {e}")
@@ -329,6 +328,22 @@ class BaseAgent:
                                                 # а затем запускаем новый run, чтобы агент увидел результат и продолжил работу.
                                                 logger.info(f"Добавляем результат инструмента {tool_found} в thread и запускаем новый run")
                                                 
+                                                # Добавляем историю инструментов из предыдущих циклов только один раз - при первом использовании инструментов
+                                                if not self._tool_history_added:
+                                                    try:
+                                                        chat_id = getattr(thread, 'chat_id', None)
+                                                        if chat_id:
+                                                            tool_history_service = get_tool_history_service()
+                                                            tool_history_context = tool_history_service.format_tool_results_for_context(chat_id)
+                                                            
+                                                            if tool_history_context:
+                                                                # Добавляем историю результатов инструментов в thread перед результатом инструмента
+                                                                thread.write(f"[Контекст из предыдущих циклов]\n{tool_history_context}")
+                                                                logger.debug(f"Добавлена история результатов инструментов в контекст для chat_id={chat_id} (JSON)")
+                                                                self._tool_history_added = True
+                                                    except Exception as e:
+                                                        logger.debug(f"Ошибка при добавлении истории результатов инструментов в контекст (JSON): {e}")
+                                                
                                                 # Формируем сообщение с результатом инструмента
                                                 tool_result_message = f"Результат выполнения инструмента {tool_found}:\n{tool_result}"
                                                 
@@ -346,11 +361,21 @@ class BaseAgent:
                                                 try:
                                                     res_text = getattr(res, 'text', None) if res else None
                                                     res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                                                    
+                                                    # Проверяем информацию о токенах в res и run
+                                                    usage_source = res
+                                                    try:
+                                                        run_attrs = [attr for attr in dir(run) if not attr.startswith('_')]
+                                                        if any('token' in attr.lower() or 'usage' in attr.lower() for attr in run_attrs):
+                                                            usage_source = run
+                                                    except Exception:
+                                                        pass
+                                                    
                                                     llm_request_logger.log_response_from_llm(
                                                         agent_name=self.agent_name,
                                                         response_text=res_text,
                                                         tool_calls=res_tool_calls if res_tool_calls else None,
-                                                        raw_response=res
+                                                        raw_response=usage_source
                                                     )
                                                 except Exception as e:
                                                     logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
@@ -525,6 +550,23 @@ class BaseAgent:
                     break
                 
                 if result:
+                    # Добавляем историю инструментов из предыдущих циклов только один раз - при первом использовании инструментов
+                    if not self._tool_history_added:
+                        try:
+                            chat_id = getattr(thread, 'chat_id', None)
+                            if chat_id:
+                                tool_history_service = get_tool_history_service()
+                                tool_history_context = tool_history_service.format_tool_results_for_context(chat_id)
+                                
+                                if tool_history_context:
+                                    # Добавляем историю результатов инструментов в thread перед отправкой результатов
+                                    # Это поможет агенту использовать результаты из предыдущих циклов
+                                    thread.write(f"[Контекст из предыдущих циклов]\n{tool_history_context}")
+                                    logger.debug(f"Добавлена история результатов инструментов в контекст для chat_id={chat_id}")
+                                    self._tool_history_added = True
+                        except Exception as e:
+                            logger.debug(f"Ошибка при добавлении истории результатов инструментов в контекст: {e}")
+                    
                     # Логируем результаты инструментов перед отправкой в LLM
                     try:
                         llm_request_logger.log_tool_results_to_llm(
@@ -541,11 +583,21 @@ class BaseAgent:
                     try:
                         res_text = getattr(res, 'text', None) if res else None
                         res_tool_calls = getattr(res, 'tool_calls', None) if res else None
+                        
+                        # Проверяем информацию о токенах в res и run
+                        usage_source = res
+                        try:
+                            run_attrs = [attr for attr in dir(run) if not attr.startswith('_')]
+                            if any('token' in attr.lower() or 'usage' in attr.lower() for attr in run_attrs):
+                                usage_source = run
+                        except Exception:
+                            pass
+                        
                         llm_request_logger.log_response_from_llm(
                             agent_name=self.agent_name,
                             response_text=res_text,
                             tool_calls=res_tool_calls if res_tool_calls else None,
-                            raw_response=res
+                            raw_response=usage_source
                         )
                     except Exception as e:
                         logger.debug(f"Ошибка при логировании ответа LLM после tool_calls: {e}")
