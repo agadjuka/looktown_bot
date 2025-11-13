@@ -58,6 +58,8 @@ jobs:
             YC_AGENT_ID=${{ secrets.YC_AGENT_ID }}
             DEBUG=${{ secrets.DEBUG }}
             CONTAINER_NAME=looktownbot
+            AUTH_HEADER=${{ secrets.AUTH_HEADER }}
+            COMPANY_ID=${{ secrets.COMPANY_ID }}
 
       - name: Setup Yandex Cloud CLI and jq
         if: always()

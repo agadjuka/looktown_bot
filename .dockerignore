@@ -77,6 +77,12 @@ desktop.ini
 *.log
 logs/
 
+# Development tools (not needed in production)
+tool_manager/
+prompt_manager/
+playground.py
+run_playground.py
+
 # Docker build files (not needed in final image)
 .dockerignore
 Dockerfile

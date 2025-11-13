@@ -28,9 +28,16 @@ class LLMRequestLogger:
         if self._initialized:
             return
         
-        # Создаём папку для логов
-        self.logs_dir = Path("logs")
-        self.logs_dir.mkdir(exist_ok=True)
+        # Проверяем, нужно ли сохранять логи в файлы
+        # В облачной версии (контейнере) отключаем сохранение логов
+        self.logging_enabled = os.getenv('ENABLE_DEBUG_LOGS', 'false').lower() == 'true'
+        
+        if self.logging_enabled:
+            # Создаём папку для логов только если включено
+            self.logs_dir = Path("logs")
+            self.logs_dir.mkdir(exist_ok=True)
+        else:
+            self.logs_dir = None
         
         # Файл для текущего запроса
         self.current_log_file: Optional[Path] = None
@@ -40,8 +47,11 @@ class LLMRequestLogger:
         
         self._initialized = True
     
-    def start_new_request(self) -> Path:
+    def start_new_request(self) -> Optional[Path]:
         """Начать новый запрос - создать новый файл лога"""
+        if not self.logging_enabled:
+            return None
+        
         with self._file_lock:
             # Закрываем предыдущий файл если был
             if self.current_log_file:
@@ -74,15 +84,22 @@ class LLMRequestLogger:
             
             return self.current_log_file
     
-    def _get_log_file(self) -> Path:
+    def _get_log_file(self) -> Optional[Path]:
         """Получить файл лога для текущего запроса"""
+        if not self.logging_enabled:
+            return None
         if self.current_log_file is None:
             return self.start_new_request()
         return self.current_log_file
     
     def _write_raw(self, data: str):
         """Записать сырые данные в файл"""
+        if not self.logging_enabled:
+            return
+        
         log_file = self._get_log_file()
+        if log_file is None:
+            return
         
         with self._file_lock:
             try:
