@@ -21,6 +21,11 @@ COPY main.py ./
 COPY service_factory.py ./
 COPY src ./src
 
+# Данные для инструментов (JSON файлы)
+COPY services.json ./
+COPY about_salon.json ./
+COPY masters.json ./
+
 # Wrapper скрипт для запуска с диагностикой
 COPY start_server.py ./
 RUN chmod +x /app/start_server.py
