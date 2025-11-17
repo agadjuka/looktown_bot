@@ -76,7 +76,7 @@ if "langgraph_service" not in st.session_state:
         # Очищаем кэш перед созданием нового графа, чтобы агенты пересоздались с актуальными инструментами
         BookingGraph.clear_cache()
         st.session_state.booking_graph = BookingGraph(st.session_state.langgraph_service)
-        st.session_state.thread = st.session_state.langgraph_service.create_thread()
+        st.session_state.conversation_history = []
         st.session_state.messages = []
         st.session_state.tool_calls_history = []
         st.session_state.graph_states = []
@@ -94,9 +94,9 @@ st.markdown("Тестирование агентов бронирования LO
 with st.sidebar:
     st.header("⚙️ Настройки")
     
-    # Информация о Thread
-    if st.session_state.thread:
-        st.info(f"**Thread ID:**\n`{st.session_state.thread.id}`")
+    # Информация о conversation_history
+    if st.session_state.conversation_history:
+        st.info(f"**История сообщений:**\n`{len(st.session_state.conversation_history)} сообщений`")
     
     # Информация о текущем файле лога (если есть активный запрос)
     if llm_request_logger.current_log_file:
@@ -116,7 +116,7 @@ with st.sidebar:
                 pass
             llm_request_logger.current_log_file = None
         
-        st.session_state.thread = st.session_state.langgraph_service.create_thread()
+        st.session_state.conversation_history = []
         st.session_state.messages = []
         st.session_state.tool_calls_history = []
         st.session_state.graph_states = []
@@ -244,9 +244,9 @@ if user_input:
                 # Создаём начальное состояние
                 initial_state: BookingState = {
                     "message": user_input,
-                    "thread": st.session_state.thread,
+                    "conversation_history": st.session_state.get("conversation_history", []),
                     "stage": None,
-                    "extracted_info": None,  # Больше не используется, но оставлено для совместимости
+                    "extracted_info": None,
                     "answer": "",
                     "manager_alert": None,
                     "agent_name": None,
@@ -265,7 +265,7 @@ if user_input:
                     operation_name="выполнение графа в Playground",
                     context_info={
                         "message": user_input,
-                        "chat_id": getattr(st.session_state.thread, 'id', None)
+                        "chat_id": "playground"
                     }
                 )
                 
@@ -387,12 +387,18 @@ if user_input:
                     }
                 })
                 
-                # Показываем историю Thread
-                with st.expander("📜 История Thread (последние 10 сообщений)", expanded=False):
-                    thread_messages = list(st.session_state.thread)
-                    for msg in reversed(thread_messages[-10:]):
-                        role_emoji = "👤" if msg.author.role == "USER" else "🤖"
-                        st.text(f"{role_emoji} **{msg.author.role}:** {msg.text[:300]}")
+                # Обновляем conversation_history
+                if "conversation_history" in result_state:
+                    st.session_state.conversation_history = result_state["conversation_history"]
+                
+                # Показываем историю conversation_history
+                with st.expander("📜 История диалога (последние 10 сообщений)", expanded=False):
+                    history = st.session_state.get("conversation_history", [])
+                    for msg in reversed(history[-10:]):
+                        role = msg.get("role", "unknown")
+                        content = msg.get("content", "")
+                        role_emoji = "👤" if role == "user" else "🤖"
+                        st.text(f"{role_emoji} **{role.upper()}:** {content[:300]}")
                 
             except CallManagerException as e:
                 # Обрабатываем вызов CallManager - показываем сообщение пользователю и alert менеджеру

@@ -1,10 +1,10 @@
 """
-Агент для определения стадии диалога
+Агент для определения стадии диалога (Responses API)
 """
 import json
 import re
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
-from yandex_cloud_ml_sdk._threads.thread import Thread
 from .base_agent import BaseAgent
 from .dialogue_stages import DialogueStage
 from ..services.langgraph_service import LangGraphService
@@ -55,24 +55,18 @@ class StageDetectorAgent(BaseAgent):
             agent_name="Определитель стадий диалога"
         )
     
-    def detect_stage(self, message: str, thread: Thread) -> StageDetection:
+    def detect_stage(self, message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> StageDetection:
         """Определение стадии диалога"""
-        # Не обрабатываем исключения здесь - пробрасываем их дальше на нижний уровень
         logger.debug(f"Начало определения стадии для сообщения: {message[:100]}")
-        thread_id = thread.id if thread and hasattr(thread, "id") else "N/A"
-        logger.debug(f"Thread ID: {thread_id}")
         
-        # Вызываем базовый метод агента - исключения пробрасываются дальше
-        response = self(message, thread)
+        # Вызываем базовый метод агента
+        response = self(message, conversation_history)
         
         logger.debug(f"Получен ответ от агента определения стадии: {response[:200] if response else 'None/Empty'}")
         
         # Если CallManager был вызван, BaseAgent вернет "[CALL_MANAGER_RESULT]"
-        # Это будет обработано в графе через проверку _call_manager_result
-        # Здесь мы просто возвращаем валидную стадию, граф сам обработает CallManager
         if response == "[CALL_MANAGER_RESULT]":
             logger.info("CallManager был вызван в StageDetectorAgent")
-            # Возвращаем валидную стадию, граф обработает CallManager через _call_manager_result
             return StageDetection(stage=DialogueStage.GREETING.value)
         
         # Парсим ответ
@@ -112,16 +106,14 @@ class StageDetectorAgent(BaseAgent):
             return StageDetection(stage=first_word)
         
         # ШАГ 3: Ищем стадию как целое слово через регулярные выражения
-        # Сортируем от длинных к коротким, чтобы "booking_to_master" проверялся раньше "booking"
         sorted_stages = sorted(valid_stages, key=len, reverse=True)
         for stage in sorted_stages:
-            # Ищем стадию как целое слово (с границами слов)
             pattern = r'\b' + re.escape(stage) + r'\b'
             if re.search(pattern, response_clean):
                 logger.debug(f"Найдена стадия через regex: {stage}")
                 return StageDetection(stage=stage)
         
-        # ШАГ 4: Пытаемся найти в JSON (на случай если агент вернул JSON)
+        # ШАГ 4: Пытаемся найти в JSON
         json_start = response_clean.find('{')
         json_end = response_clean.rfind('}') + 1
         
@@ -136,14 +128,13 @@ class StageDetectorAgent(BaseAgent):
             except json.JSONDecodeError:
                 pass
         
-        # ШАГ 5: Последняя попытка - ищем подстроку (но только если ничего не нашли)
-        # Сортируем от длинных к коротким
+        # ШАГ 5: Последняя попытка - ищем подстроку
         for stage in sorted_stages:
             if stage in response_clean:
                 logger.warning(f"Найдена стадия как подстрока (может быть неточно): {stage} в ответе: {response_clean}")
                 return StageDetection(stage=stage)
         
-        # Fallback: если не удалось определить стадию
+        # Fallback
         logger.warning(f"Не удалось определить стадию из ответа: {response_clean}")
         logger.warning(f"Доступные стадии: {valid_stages}")
         return StageDetection(stage=DialogueStage.GREETING.value)

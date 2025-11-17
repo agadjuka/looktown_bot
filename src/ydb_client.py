@@ -141,6 +141,40 @@ class YDBClient:
         """
         self._execute_query(query, {"$cid": chat_id})
     
+    def get_conversation_history(self, chat_id: str) -> Optional[str]:
+        """Получение conversation_history по chat_id"""
+        query = """
+        DECLARE $cid AS String;
+        SELECT conversation_history FROM chat_threads WHERE chat_id = $cid;
+        """
+        result = self._execute_query(query, {"$cid": chat_id})
+        rows = result[0].rows
+        if rows and rows[0].conversation_history:
+            return rows[0].conversation_history.decode('utf-8')
+        return None
+    
+    def save_conversation_history(self, chat_id: str, history_json: str):
+        """Сохранение conversation_history"""
+        query = """
+        DECLARE $cid AS String;
+        DECLARE $history AS String;
+        UPSERT INTO chat_threads (chat_id, conversation_history, updated_at)
+        VALUES ($cid, $history, CurrentUtcTimestamp());
+        """
+        self._execute_query(query, {
+            "$cid": chat_id,
+            "$history": history_json.encode('utf-8')
+        })
+    
+    def reset_conversation_history(self, chat_id: str):
+        """Сброс conversation_history для чата"""
+        query = """
+        DECLARE $cid AS String;
+        UPDATE chat_threads SET conversation_history = NULL, updated_at = CurrentUtcTimestamp()
+        WHERE chat_id = $cid;
+        """
+        self._execute_query(query, {"$cid": chat_id})
+    
     def get_assistant_id(self, assistant_name: str) -> Optional[str]:
         """Получение assistant_id по имени"""
         query = """
