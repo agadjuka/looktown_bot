@@ -210,6 +210,7 @@ async def find_slots_by_period(
     time_period: str,
     master_name: Optional[str] = None,
     master_id: Optional[int] = None,
+    date: Optional[str] = None,
     date_range: Optional[str] = None
 ) -> Dict[str, any]:
     """
@@ -222,7 +223,8 @@ async def find_slots_by_period(
         time_period: Период времени ("morning", "day", "evening") или пустая строка для поиска всех слотов
         master_name: Имя мастера (опционально)
         master_id: ID мастера (опционально)
-        date_range: Интервал дат в формате "YYYY-MM-DD:YYYY-MM-DD" (опционально)
+        date: Конкретная дата в формате "YYYY-MM-DD" (опционально). Если указана, date_range игнорируется.
+        date_range: Интервал дат в формате "YYYY-MM-DD:YYYY-MM-DD" (опционально). Используется только если date не указан.
         
     Returns:
         Dict с результатами поиска:
@@ -314,7 +316,17 @@ async def find_slots_by_period(
         }
     
     # 3. Определяем список дат для проверки
-    if date_range:
+    if date:
+        # Если указана конкретная дата, используем только её (игнорируем date_range)
+        try:
+            # Проверяем формат даты
+            datetime.strptime(date, "%Y-%m-%d")
+            dates_to_check = [date]
+        except ValueError as e:
+            return {
+                "error": f"Неверный формат даты: {date}. Ожидается формат YYYY-MM-DD. Ошибка: {str(e)}"
+            }
+    elif date_range:
         # Если указан интервал дат, используем его
         try:
             start_date, end_date = _parse_date_range(date_range)
@@ -324,7 +336,7 @@ async def find_slots_by_period(
                 "error": str(e)
             }
     else:
-        # Если не указан интервал, начинаем с сегодняшней даты
+        # Если не указан ни date, ни date_range, начинаем с сегодняшней даты
         # Используем системное время (предполагается, что сервер работает в московском часовом поясе)
         today = datetime.now().date()
         dates_to_check = []
@@ -336,12 +348,12 @@ async def find_slots_by_period(
     
     # 4. Параллельно запрашиваем слоты для всех дат и мастеров
     tasks = []
-    for date in dates_to_check:
+    for check_date in dates_to_check:
         for master_id in master_ids:
             tasks.append(
                 yclients_service.get_book_times(
                     master_id=master_id,
-                    date=date,
+                    date=check_date,
                     service_id=service_id
                 )
             )
@@ -352,8 +364,8 @@ async def find_slots_by_period(
     date_slots = {}  # {date: set of times}
     task_index = 0
     
-    for date in dates_to_check:
-        date_slots[date] = set()
+    for check_date in dates_to_check:
+        date_slots[check_date] = set()
         for master_id in master_ids:
             response = responses[task_index]
             task_index += 1
@@ -362,24 +374,27 @@ async def find_slots_by_period(
                 continue
             
             for slot in response.data:
-                date_slots[date].add(slot.time)
+                date_slots[check_date].add(slot.time)
     
     # 6. Фильтруем слоты по периоду времени (если указан) и объединяем в интервалы
     results = []
     days_found = 0
-    target_days = 3 if not date_range else len(dates_to_check)
+    # Если указана конкретная дата или date_range, проверяем все даты из списка
+    # Иначе ищем до 3 дней с доступными слотами
+    target_days = 3 if not date and not date_range else len(dates_to_check)
     
     # Получаем границы периода времени для фильтрации (только если указан период)
     if filter_by_time:
         start_bound, end_bound = _get_time_period_bounds(time_period)
     
-    for date in dates_to_check:
-        # Если не указан date_range и нашли 3 дня с доступными слотами - останавливаемся
-        if not date_range and days_found >= target_days:
+    for check_date in dates_to_check:
+        # Если не указаны ни date, ни date_range и нашли 3 дня с доступными слотами - останавливаемся
+        if not date and not date_range and days_found >= target_days:
             break
         
         # Получаем все временные точки за день
-        times = sorted(list(date_slots[date]), key=_time_to_minutes)
+        times = sorted(list(date_slots[check_date]), key=_time_to_minutes)
+        
         if not times:
             continue
         
@@ -414,7 +429,7 @@ async def find_slots_by_period(
         # Если есть хотя бы один подходящий интервал - добавляем день в результаты
         if final_intervals:
             results.append({
-                "date": date,
+                "date": check_date,
                 "slots": final_intervals
             })
             days_found += 1

@@ -54,7 +54,7 @@ async def reschedule_booking_logic(
             return {
                 "success": False,
                 "message": None,
-                "error": "Неверный ID мастера. Сначала получите мастера через инструмент FindMasterByService или BookTimes."
+                "error": "Неверный ID мастера. Сначала получите мастера через инструмент FindMasterByService или FindSlots."
             }
         
         if not service_id or service_id == 0 or service_id == 1:

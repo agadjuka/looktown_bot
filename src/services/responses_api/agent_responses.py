@@ -13,7 +13,6 @@ from .config import ResponsesAPIConfig
 from ...agents.tools import (
     GetCategories,
     GetServices,
-    BookTimes,
     FindSlots,
     CreateBooking,
     ViewService,
@@ -55,7 +54,6 @@ def create_responses_agent() -> ResponsesOrchestrator:
     all_tools = [
         GetCategories,
         GetServices,
-        BookTimes,
         FindSlots,
         CreateBooking,
         ViewService,

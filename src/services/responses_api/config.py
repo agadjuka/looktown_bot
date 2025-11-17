@@ -23,7 +23,7 @@ class ResponsesAPIConfig:
         
         # Параметры модели по умолчанию
         self.max_output_tokens = int(os.getenv("YANDEX_MAX_OUTPUT_TOKENS", "800"))
-        self.temperature = float(os.getenv("YANDEX_TEMPERATURE", "0.2"))
+        self.temperature = float(os.getenv("YANDEX_TEMPERATURE", "0.1"))
     
     @property
     def project(self) -> str:

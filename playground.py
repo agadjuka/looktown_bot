@@ -22,6 +22,26 @@ from datetime import datetime
 # Загружаем переменные окружения
 load_dotenv()
 
+# Функция для форматирования текста с сохранением переносов строк
+def format_text_with_line_breaks(text: str) -> str:
+    """
+    Форматирует текст так, чтобы одинарные переносы строк отображались в Markdown.
+    В Markdown для переноса строки нужно два пробела в конце строки.
+    """
+    if not isinstance(text, str):
+        return str(text)
+    
+    # Сначала заменяем двойные переносы на специальный маркер, чтобы их не трогать
+    text = text.replace('\n\n', '\x00\x00')
+    
+    # Заменяем все одинарные переносы на два пробела + перенос
+    text = text.replace('\n', '  \n')
+    
+    # Восстанавливаем двойные переносы (они создают абзацы в Markdown)
+    text = text.replace('\x00\x00', '\n\n')
+    
+    return text
+
 # Импорты для работы с агентами
 from src.services.langgraph_service import LangGraphService
 from src.graph.booking_graph import BookingGraph
@@ -163,7 +183,7 @@ with chat_container:
         content = message["content"]
         
         with st.chat_message(role):
-            st.markdown(content)
+            st.markdown(format_text_with_line_breaks(content))
             
             # Показываем метаданные если есть
             if "metadata" in message:
@@ -329,7 +349,7 @@ if user_input:
                         tool_calls_results = agent._last_tool_calls
                 
                 # Показываем ответ
-                st.markdown(answer)
+                st.markdown(format_text_with_line_breaks(answer))
                 
                 # Показываем какой агент дал ответ
                 st.caption(f"🤖 **Ответ от агента:** `{agent_name}`")
@@ -419,7 +439,7 @@ if user_input:
                     pass
                 
                 # Показываем сообщение пользователю
-                st.markdown(user_message)
+                st.markdown(format_text_with_line_breaks(user_message))
                 
                 # Показываем alert менеджера если есть
                 if manager_alert:
@@ -500,7 +520,7 @@ st.markdown(f"""
 ### 📝 Информация
 - **Thread ID:** Используется для сохранения контекста диалога
 - **Стадии:** {stages_text}
-- **Инструменты:** `GetCategories`, `GetServices`, `BookTimes`, `FindSlots`
+- **Инструменты:** `GetCategories`, `GetServices`, `FindSlots`
 - **Агенты:** {agents_text}
 """)
 

@@ -4,7 +4,6 @@
 from .service_tools import (
     GetCategories,
     GetServices,
-    BookTimes,
     FindSlots,
     CreateBooking,
     ViewService,
@@ -23,7 +22,6 @@ __all__ = [
     "GetServices",
     "ViewService",
     # Инструменты бронирования
-    "BookTimes",
     "FindSlots",
     "CreateBooking",
     "FindMasterByService",

@@ -4,7 +4,7 @@
 
 from .tools.client_records_tools import GetClientRecords
 from .tools.reschedule_booking_tools import RescheduleBooking
-from .tools.service_tools import BookTimes
+from .tools.service_tools import FindSlots
 from .tools.call_manager_tools import CallManager
 
 from .base_agent import BaseAgent
@@ -36,12 +36,12 @@ class RescheduleAgent(BaseAgent):
 
 Шаг 3. Сделай попытку переноса через RescheduleBooking. Если перенос успешно осуществится, то подтверди это клиенту.
 
-Шаг 4. Если Мастер занят (Ошибка: Слот занят или нерабочее время. Выберите другое время.), сразу же используй инструмент booktimes указав ID мастера к которому клиент был записан и проверь доступные слоты на этот день. Отправь эти слоты клиенту, и сообщи, что его мастер в это время занят, вот доступные слоты. Не вызывай никаких инструментов после этого."""
+Шаг 4. Если Мастер занят (Ошибка: Слот занят или нерабочее время. Выберите другое время.), сразу же используй инструмент FindSlots указав ID мастера (master_id) к которому клиент был записан, service_id и date для проверки доступных слотов на этот день. Отправь эти слоты клиенту, и сообщи, что его мастер в это время занят, вот доступные слоты. Не вызывай никаких инструментов после этого."""
         
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[BookTimes, GetClientRecords, RescheduleBooking, CallManager],
+            tools=[FindSlots, GetClientRecords, RescheduleBooking, CallManager],
             agent_name="Агент переноса бронирований"
         )
 

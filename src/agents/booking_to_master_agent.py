@@ -3,7 +3,7 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
-from .tools.service_tools import BookTimes, FindSlots, CreateBooking, FindMasterByService
+from .tools.service_tools import FindSlots, CreateBooking, FindMasterByService
 from .tools.call_manager_tools import CallManager
 
 
@@ -38,7 +38,7 @@ class BookingToMasterAgent(BaseAgent):
 Формулировка: "Хорошо. На какой день вас записать к [Имя мастера  в правильном склонении]?"
 
 Шаг 4: Поиск и предложение времени (НЕ СМОТРИ НА ШАГ 5 НА ЭТОМ ЭТАПЕ!) 
-Получив дату, ОБЯЗАТЕЛЬНО используй инструмент BookTimes с указанием service_id, date и master_name для поиска доступных слотов у указанного мастера. Service_id узнай через FindMasterByService.
+Получив дату, ОБЯЗАТЕЛЬНО используй инструмент FindSlots с указанием service_id, date и master_name для поиска доступных слотов у указанного мастера на конкретную дату. Service_id узнай через FindMasterByService.
 Если клиент просит найти ближайшее доступное время используй инструмент FindSlots с пустым полем TimePeriod.
 Если клиент просит найти слоты по какому-то временному признаку, как, например, вечером, утром или после четырёх, то используй инструмент FindSlots с указанием желаемого времени посещения.
 В сообщении клиента указана текущая дата и время. Если клиент говорит «сегодня/завтра/послезавтра/в понедельник/в среду» — считаем от текущей даты; если говорит день недели — берём ближайший следующий этот день от текущей даты.
@@ -74,7 +74,7 @@ class BookingToMasterAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[BookTimes, FindSlots, CreateBooking, FindMasterByService, CallManager],
+            tools=[FindSlots, CreateBooking, FindMasterByService, CallManager],
             agent_name="Агент бронирования к мастеру"
         )
 

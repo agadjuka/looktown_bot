@@ -130,99 +130,12 @@ class GetServices(BaseModel):
             return f"Ошибка при получении услуг: {str(e)}"
 
 
-class BookTimes(BaseModel):
-    """
-    Найти доступные временные слоты для записи на услугу.
-    Используй когда клиент выбрал услугу и дату - нужно найти свободное время.
-    service_id получай из GetServices (каждая услуга имеет ID: число).
-    date в формате YYYY-MM-DD (например "2025-11-12").
-    """
-    
-    service_id: int = Field(
-        description="ID услуги (число). Получи из GetServices - каждая услуга имеет формат 'Название (ID: число)'."
-    )
-    
-    date: str = Field(
-        description="Дата в формате YYYY-MM-DD (например '2025-11-12'). Преобразуй относительные даты ('сегодня', 'завтра') в этот формат."
-    )
-    
-    master_name: Optional[str] = Field(
-        default=None,
-        description="Имя мастера (опционально). Если указано - слоты только у этого мастера. Игнорируется если указан staff_id."
-    )
-    
-    staff_id: Optional[int] = Field(
-        default=None,
-        description="ID мастера (опционально). Если указан - слоты только у этого мастера. Имеет приоритет над master_name."
-    )
-    
-    def process(self, thread: Thread) -> str:
-        """
-        Поиск доступных временных слотов для записи
-        
-        Returns:
-            Отформатированный список доступных временных интервалов
-        """
-        try:
-            import asyncio
-            from .yclients_service import YclientsService
-            from .book_times_logic import find_best_slots
-            
-            # Создаем сервис (он сам возьмет переменные окружения)
-            try:
-                yclients_service = YclientsService()
-            except ValueError as e:
-                return f"Ошибка конфигурации: {str(e)}. Проверьте переменные окружения AUTH_HEADER/AuthenticationToken и COMPANY_ID/CompanyID."
-            
-            # Запускаем async функцию синхронно
-            result = asyncio.run(
-                find_best_slots(
-                    yclients_service=yclients_service,
-                    service_id=self.service_id,
-                    date=self.date,
-                    master_name=self.master_name,
-                    staff_id=self.staff_id
-                )
-            )
-            
-            # Форматируем результат
-            if result.get('error'):
-                return f"Ошибка: {result['error']}"
-            
-            service_title = result.get('service_title', 'Услуга')
-            master_name = result.get('master_name')
-            slots = result.get('slots', [])
-            
-            if not slots:
-                if master_name:
-                    return f"К сожалению, на {self.date} у мастера {master_name} нет свободных слотов для услуги '{service_title}'."
-                else:
-                    return f"К сожалению, на {self.date} нет свободных слотов для услуги '{service_title}'."
-            
-            # Форматируем список слотов
-            slots_text = "\n".join([f"  • {slot}" for slot in slots])
-            
-            result_text = f"Доступные временные слоты для услуги '{service_title}' на {self.date}:\n\n{slots_text}"
-            
-            if master_name:
-                result_text = f"Доступные временные слоты у мастера {master_name} для услуги '{service_title}' на {self.date}:\n\n{slots_text}"
-            
-            return result_text
-            
-        except ValueError as e:
-            logger.error(f"Ошибка конфигурации BookTimes: {e}")
-            return f"Ошибка конфигурации: {str(e)}"
-        except Exception as e:
-            logger.error(f"Ошибка при поиске слотов: {e}", exc_info=True)
-            return f"Ошибка при поиске доступных слотов: {str(e)}"
-
-
 class FindSlots(BaseModel):
     """
     Найти доступные временные слоты для услуги с фильтрацией по периоду времени.
     Используй когда клиент хочет найти время в определенный период (утром, днем, вечером) 
-    или в определенном интервале дат. Этот инструмент более гибкий чем BookTimes - он может 
-    искать слоты на несколько дней вперед и фильтровать по времени суток.
+    или в определенном интервале дат. Этот инструмент может искать слоты на несколько дней вперед 
+    и фильтровать по времени суток. Также может искать слоты на конкретную дату.
     Если time_period не указан, инструмент найдет ближайшие доступные слоты без фильтрации по времени.
     """
     
@@ -245,9 +158,14 @@ class FindSlots(BaseModel):
         description="ID мастера (необязательное поле). Заполняй только если знаешь точный ID мастера. Если указан master_id, то master_name игнорируется."
     )
     
+    date: Optional[str] = Field(
+        default=None,
+        description="Конкретная дата (необязательное поле). Формат: 'YYYY-MM-DD' (например, '2025-01-15'). Заполняй только если клиент указал конкретную дату."
+    )
+    
     date_range: Optional[str] = Field(
         default=None,
-        description="Интервал дат (необязательное поле). Формат: 'YYYY-MM-DD:YYYY-MM-DD' (например, '2025-01-11:2025-01-16'). Заполняй только если клиент указал конкретный интервал дат. Если не указан, инструмент будет искать с текущей даты до 10 дней вперед, пока не найдет 3 дня с доступными слотами."
+        description="Интервал дат (необязательное поле). Формат: 'YYYY-MM-DD:YYYY-MM-DD' (например, '2025-01-11:2025-01-16'). Заполняй только если клиент указал конкретный интервал дат и не указана конкретная дата. Если не указан, инструмент будет искать с текущей даты до 10 дней вперед, пока не найдет 3 дня с доступными слотами."
     )
     
     def process(self, thread: Thread) -> str:
@@ -276,6 +194,7 @@ class FindSlots(BaseModel):
                     time_period=self.time_period or "",
                     master_name=self.master_name,
                     master_id=self.master_id,
+                    date=self.date,
                     date_range=self.date_range
                 )
             )
@@ -298,12 +217,16 @@ class FindSlots(BaseModel):
                     period_text = ""
                 
                 if master_name:
-                    if self.date_range:
+                    if self.date:
+                        return f"К сожалению, у мастера {master_name} нет свободных слотов{period_text} для услуги '{service_title}' на {self.date}."
+                    elif self.date_range:
                         return f"К сожалению, у мастера {master_name} нет свободных слотов{period_text} для услуги '{service_title}' в указанный период."
                     else:
                         return f"К сожалению, у мастера {master_name} нет свободных слотов{period_text} для услуги '{service_title}' в ближайшие дни."
                 else:
-                    if self.date_range:
+                    if self.date:
+                        return f"К сожалению, нет свободных слотов{period_text} для услуги '{service_title}' на {self.date}."
+                    elif self.date_range:
                         return f"К сожалению, нет свободных слотов{period_text} для услуги '{service_title}' в указанный период."
                     else:
                         return f"К сожалению, нет свободных слотов{period_text} для услуги '{service_title}' в ближайшие дни."
@@ -385,8 +308,8 @@ class CreateBooking(BaseModel):
     - service_id: из GetServices (каждая услуга имеет ID: число)
     - client_name: из сообщений клиента в диалоге (Шаг 6 сбора данных)
     - client_phone: из сообщений клиента в диалоге (Шаг 6 сбора данных)
-    - datetime: собери из даты (Шаг 3) и времени (Шаг 5, выбранного клиентом из BookTimes), формат YYYY-MM-DD HH:MM (например "2025-11-12 14:30")
-    - master_name: из BookTimes (если был указан мастер) или из сообщений клиента (если клиент просил конкретного мастера), опционально
+    - datetime: собери из даты (Шаг 3) и времени (Шаг 5, выбранного клиентом из FindSlots), формат YYYY-MM-DD HH:MM (например "2025-11-12 14:30")
+    - master_name: из FindSlots (если был указан мастер) или из сообщений клиента (если клиент просил конкретного мастера), опционально
     """
     
     service_id: int = Field(
@@ -402,12 +325,12 @@ class CreateBooking(BaseModel):
     )
     
     datetime: str = Field(
-        description="Дата и время записи в формате YYYY-MM-DD HH:MM (например '2025-11-12 14:30') или YYYY-MM-DDTHH:MM. Собери из: дата из Шага 3 (когда клиент выбрал дату) и время из Шага 5 (когда клиент выбрал конкретное время из доступных слотов BookTimes)."
+        description="Дата и время записи в формате YYYY-MM-DD HH:MM (например '2025-11-12 14:30') или YYYY-MM-DDTHH:MM. Собери из: дата из Шага 3 (когда клиент выбрал дату) и время из Шага 5 (когда клиент выбрал конкретное время из доступных слотов FindSlots)."
     )
     
     master_name: Optional[str] = Field(
         default=None,
-        description="Имя мастера (опционально). Получи из BookTimes (если клиент выбирал время у конкретного мастера) или из сообщений клиента (если клиент явно просил записаться к конкретному мастеру). НЕ УКАЗЫВАЙ если клиент не просил конкретного мастера."
+        description="Имя мастера (опционально). Получи из FindSlots (если клиент выбирал время у конкретного мастера) или из сообщений клиента (если клиент явно просил записаться к конкретному мастеру). НЕ УКАЗЫВАЙ если клиент не просил конкретного мастера."
     )
     
     def process(self, thread: Thread) -> str:
