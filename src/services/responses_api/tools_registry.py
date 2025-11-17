@@ -28,6 +28,12 @@ class ResponsesToolsRegistry:
             raise ValueError(f"Инструмент {tool_class.__name__} должен иметь метод process")
         
         tool_name = tool_class.__name__
+        
+        # Проверяем, не зарегистрирован ли уже этот инструмент в этом реестре
+        if tool_name in self._tool_classes:
+            # Инструмент уже зарегистрирован в этом реестре - не логируем повторно
+            return
+        
         self._tool_classes[tool_name] = tool_class
         
         # Создаём обёртку для вызова инструмента
@@ -40,16 +46,34 @@ class ResponsesToolsRegistry:
                 # Создаём минимальный mock Thread для совместимости
                 # Большинство инструментов не используют thread напрямую
                 class MockThread:
-                    """Минимальный mock Thread для совместимости"""
-                    def __init__(self):
+                    """Минимальный mock Thread для совместимости с Responses API"""
+                    def __init__(self, conversation_history=None):
                         self.id = None
                         self.chat_id = None
+                        self._conversation_history = conversation_history or []
                     
                     def __iter__(self):
                         """Для совместимости с инструментами, которые итерируют thread"""
-                        return iter([])
+                        # Возвращаем mock-объекты сообщений из conversation_history
+                        class MockMessage:
+                            def __init__(self, role, content):
+                                self.author = type('Author', (), {'role': role.upper()})()
+                                self.text = content
+                                self.role = role
+                                self.content = content
+                        
+                        messages = []
+                        for msg in self._conversation_history:
+                            if isinstance(msg, dict):
+                                role = msg.get("role", "user")
+                                content = msg.get("content", "")
+                                messages.append(MockMessage(role, content))
+                        
+                        return iter(messages)
                 
-                mock_thread = MockThread()
+                # Получаем conversation_history из kwargs, если передан
+                conversation_history = kwargs.pop('_conversation_history', None)
+                mock_thread = MockThread(conversation_history=conversation_history)
                 
                 # Вызываем process
                 result = tool_instance.process(mock_thread)
@@ -64,6 +88,7 @@ class ResponsesToolsRegistry:
                 return f"Ошибка при выполнении инструмента {tool_name}: {str(e)}"
         
         self._local_functions[tool_name] = tool_wrapper
+        # Логируем только при первой регистрации в реестре
         logger.debug(f"Зарегистрирован инструмент: {tool_name}")
     
     def register_tools_from_list(self, tool_classes: List[type]):
@@ -76,13 +101,14 @@ class ResponsesToolsRegistry:
         for tool_class in tool_classes:
             self.register_tool(tool_class)
     
-    def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    def call_tool(self, name: str, arguments: Dict[str, Any], conversation_history: Optional[List[Dict[str, Any]]] = None) -> Any:
         """
         Вызов зарегистрированного инструмента
         
         Args:
             name: Имя инструмента
             arguments: Аргументы для инструмента
+            conversation_history: История диалога (для передачи в MockThread)
             
         Returns:
             Результат выполнения инструмента
@@ -90,6 +116,10 @@ class ResponsesToolsRegistry:
         fn = self._local_functions.get(name)
         if fn is None:
             raise RuntimeError(f"Инструмент '{name}' не зарегистрирован")
+        
+        # Передаём conversation_history в tool_wrapper через специальный параметр
+        if conversation_history is not None:
+            arguments['_conversation_history'] = conversation_history
         
         return fn(**arguments)
     

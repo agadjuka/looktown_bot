@@ -124,21 +124,17 @@ class LLMRequestLogger:
         
         Args:
             agent_name: Имя агента
-            thread_id: ID thread
-            assistant_id: ID assistant
-            instruction: Инструкция assistant
-            tools: Список инструментов (объекты SDK)
-            messages: Список сообщений из thread
+            thread_id: ID thread (устаревший параметр, всегда None для Responses API)
+            assistant_id: ID assistant (устаревший параметр, всегда None для Responses API)
+            instruction: Инструкция для модели
+            tools: Список инструментов (классы инструментов)
+            messages: Список сообщений (conversation_history)
         """
         timestamp = datetime.now().isoformat()
         log_entry = f"\n{'='*80}\n"
         log_entry += f"[{timestamp}] REQUEST TO LLM (EXACT DATA SENT TO API)\n"
         log_entry += f"{'='*80}\n"
         log_entry += f"Agent: {agent_name}\n"
-        if thread_id:
-            log_entry += f"Thread ID: {thread_id}\n"
-        if assistant_id:
-            log_entry += f"Assistant ID: {assistant_id}\n"
         log_entry += "\n"
         
         # Формируем JSON структуру запроса, как она реально отправляется в API

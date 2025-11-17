@@ -126,7 +126,7 @@ class ResponsesOrchestrator:
                 
                 # Вызываем инструмент
                 try:
-                    result = self.tools_registry.call_tool(func_name, args)
+                    result = self.tools_registry.call_tool(func_name, args, conversation_history=conversation_history)
                     self._add_tool_call_to_history(
                         conversation_history, tool_calls_info, 
                         func_name, call_id, args_json, args, result
