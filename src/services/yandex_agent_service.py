@@ -10,7 +10,6 @@ from typing import Optional, List, Dict, Any
 from ..ydb_client import get_ydb_client
 from .auth_service import AuthService
 from .debug_service import DebugService
-from .escalation_service import EscalationService
 from .logger_service import logger
 from ..graph.booking_graph import BookingGraph
 from .langgraph_service import LangGraphService
@@ -20,11 +19,10 @@ import requests
 class YandexAgentService:
     """Сервис для работы с LangGraph (Responses API)"""
     
-    def __init__(self, auth_service: AuthService, debug_service: DebugService, escalation_service: EscalationService):
+    def __init__(self, auth_service: AuthService, debug_service: DebugService):
         """Инициализация сервиса с внедрением зависимостей"""
         self.auth_service = auth_service
         self.debug_service = debug_service
-        self.escalation_service = escalation_service
         
         # Инициализация YDB клиента
         self.ydb_client = get_ydb_client()
@@ -145,10 +143,6 @@ class YandexAgentService:
         
         answer = normalize_dates_in_text(answer)
         answer = normalize_times_in_text(answer)
-        
-        # Проверяем на эскалацию
-        if answer.strip().startswith('[CALL_MANAGER]'):
-            return self.escalation_service.handle(answer, chat_id)
         
         result = {"user_message": answer}
         if manager_alert:

@@ -16,7 +16,6 @@ from ..agents.tool_tester_agent import ToolTesterAgent
 
 from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
-from ..services.escalation_service import EscalationService
 
 
 class BookingGraph:
@@ -125,7 +124,7 @@ class BookingGraph:
             logger.info(f"CallManager был вызван в StageDetectorAgent, chat_id: {chat_id}")
             
             return {
-                "answer": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                "answer": escalation_result.get("user_message"),
                 "manager_alert": escalation_result.get("manager_alert"),
                 "agent_name": "StageDetectorAgent",
                 "used_tools": ["CallManager"]
@@ -184,7 +183,7 @@ class BookingGraph:
             logger.info(f"CallManager был вызван через инструмент в агенте {agent_name}, chat_id: {chat_id}")
             
             return {
-                "answer": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                "answer": escalation_result.get("user_message"),
                 "manager_alert": escalation_result.get("manager_alert"),
                 "agent_name": agent_name,
                 "used_tools": used_tools

@@ -9,6 +9,7 @@ from src.services.date_normalizer import normalize_dates_in_text
 from src.services.time_normalizer import normalize_times_in_text
 from src.services.retry_service import RetryService
 from src.services.call_manager_service import CallManagerException
+from src.services.escalation_service import EscalationService
 
 load_dotenv()
 
@@ -74,6 +75,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     agent_response = await send_to_agent(user_message, chat_id)
     # Ожидаем словарь: {"user_message": str, "manager_alert": Optional[str]}
     user_message_text = agent_response.get("user_message") if isinstance(agent_response, dict) else str(agent_response)
+    
+    # Проверяем на эскалацию [CALL_MANAGER] перед отправкой в Telegram
+    if user_message_text and user_message_text.strip().startswith('[CALL_MANAGER]'):
+        escalation_service = EscalationService()
+        escalation_result = escalation_service.handle(user_message_text, chat_id)
+        user_message_text = escalation_result.get("user_message", user_message_text)
+        # Обновляем agent_response с результатом эскалации
+        agent_response = {
+            "user_message": user_message_text,
+            "manager_alert": escalation_result.get("manager_alert")
+        }
+    
     # Нормализуем даты и время в ответе
     user_message_text = normalize_dates_in_text(user_message_text)
     user_message_text = normalize_times_in_text(user_message_text)

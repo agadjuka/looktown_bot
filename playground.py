@@ -423,7 +423,7 @@ if user_input:
             except CallManagerException as e:
                 # Обрабатываем вызов CallManager - показываем сообщение пользователю и alert менеджеру
                 escalation_result = e.escalation_result
-                user_message = escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера.")
+                user_message = escalation_result.get("user_message")
                 manager_alert = escalation_result.get("manager_alert")
                 
                 # Завершаем запрос с CallManager

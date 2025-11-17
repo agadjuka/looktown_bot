@@ -37,8 +37,7 @@ class ServiceFactory:
         if self._yandex_agent_service is None:
             auth_service = self.get_auth_service()
             debug_service = self.get_debug_service()
-            escalation_service = self.get_escalation_service()
-            self._yandex_agent_service = YandexAgentService(auth_service, debug_service, escalation_service)
+            self._yandex_agent_service = YandexAgentService(auth_service, debug_service)
         return self._yandex_agent_service
     
     def get_langgraph_service(self) -> LangGraphService:

@@ -144,7 +144,7 @@ class ResponsesOrchestrator:
                         logger.info(f"CallManager вызван через инструмент {func_name}")
                         
                         return {
-                            "reply": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                            "reply": escalation_result.get("user_message"),
                             "conversation_history": conversation_history,
                             "tool_calls": tool_calls_info,
                             "call_manager": True,
