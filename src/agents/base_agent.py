@@ -99,13 +99,14 @@ class BaseAgent:
             
             reply = result.get("reply", "")
             response_id = result.get("response_id")
+            raw_response = result.get("raw_response")
                     
             # Логируем ответ от LLM
             llm_request_logger.log_response_from_llm(
                 agent_name=self.agent_name,
                 response_text=reply,
                 tool_calls=self._last_tool_calls if self._last_tool_calls else None,
-                raw_response=None
+                raw_response=raw_response
             )
                 
             return reply, response_id

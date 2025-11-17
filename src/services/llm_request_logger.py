@@ -249,9 +249,14 @@ class LLMRequestLogger:
                     log_entry += f"Error extracting tool call {i+1}: {e}\n"
             response_data['tool_calls'] = tool_calls_data
         
-        # Полный JSON ответа
+        # Полный необработанный JSON ответа
         log_entry += f"--- FULL RESPONSE JSON (AS RECEIVED FROM API) ---\n"
-        log_entry += json.dumps(response_data, ensure_ascii=False, indent=2) + "\n"
+        if raw_response and hasattr(raw_response, '_raw_json'):
+            # Сохраняем полный необработанный JSON из ответа API
+            log_entry += json.dumps(raw_response._raw_json, ensure_ascii=False, indent=2) + "\n"
+        else:
+            # Если нет полного JSON, сохраняем обработанные данные
+            log_entry += json.dumps(response_data, ensure_ascii=False, indent=2) + "\n"
         
         self._write_raw(log_entry)
     

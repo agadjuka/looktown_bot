@@ -84,6 +84,8 @@ class ResponsesAPIClient:
             class ResponseWrapper:
                 def __init__(self, data):
                     self._data = data
+                    # Сохраняем полный необработанный JSON ответа
+                    self._raw_json = data
                     
                     # Извлекаем response.id (обязательное поле для памяти диалога)
                     self.id = data.get("id") if isinstance(data, dict) else None

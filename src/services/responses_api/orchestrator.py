@@ -101,6 +101,8 @@ class ResponsesOrchestrator:
                     tools=tools_schemas if tools_schemas else None,
                     previous_response_id=current_response_id,
                 )
+                # Сохраняем полный необработанный JSON ответа для логирования
+                last_raw_response = response
             except Exception as e:
                 logger.error(f"Ошибка при запросе к API на итерации {iteration}: {e}", exc_info=True)
                 # Если это критическая ошибка, прекращаем цикл
@@ -205,6 +207,7 @@ class ResponsesOrchestrator:
             "reply": reply_text,
             "response_id": final_response_id,
             "tool_calls": tool_calls_info,
+            "raw_response": last_raw_response if 'last_raw_response' in locals() else None,
         }
     
     def _extract_tool_calls(self, response: Any) -> List[Dict[str, Any]]:
