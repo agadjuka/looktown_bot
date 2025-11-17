@@ -20,8 +20,9 @@ class ResponsesAPIClient:
     def create_response(
         self,
         instructions: str,
-        input_messages: List[Dict[str, Any]],
+        input_messages: Optional[List[Dict[str, Any]]] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
+        previous_response_id: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
     ) -> Any:
@@ -30,13 +31,14 @@ class ResponsesAPIClient:
         
         Args:
             instructions: Системные инструкции для ассистента
-            input_messages: История сообщений (conversation_history)
+            input_messages: Сообщения для нового диалога (используется только если previous_response_id не указан)
             tools: Список инструментов в формате OpenAI function tools
+            previous_response_id: ID предыдущего ответа для продолжения диалога
             max_output_tokens: Максимальное количество токенов в ответе
             temperature: Температура модели
             
         Returns:
-            Ответ от Responses API (объект с атрибутами output_text и output)
+            Ответ от Responses API (объект с атрибутами id, output_text и output)
         """
         try:
             url = f"{self.base_url}/responses"
@@ -50,8 +52,15 @@ class ResponsesAPIClient:
             payload = {
                 "model": self.config.model_uri,
                 "instructions": instructions,
-                "input": input_messages,
             }
+            
+            # Используем previous_response_id для продолжения диалога (если есть)
+            if previous_response_id:
+                payload["previous_response_id"] = previous_response_id
+            
+            # input_messages добавляется всегда, когда указан (для нового сообщения или результатов инструментов)
+            if input_messages:
+                payload["input"] = input_messages
             
             if tools:
                 payload["tools"] = tools
@@ -75,6 +84,11 @@ class ResponsesAPIClient:
             class ResponseWrapper:
                 def __init__(self, data):
                     self._data = data
+                    
+                    # Извлекаем response.id (обязательное поле для памяти диалога)
+                    self.id = data.get("id") if isinstance(data, dict) else None
+                    if not self.id:
+                        logger.warning("response.id не найден в ответе API - память диалога не будет работать")
                     
                     # Извлекаем output_text из структуры output
                     output_raw = data.get("output") if isinstance(data, dict) else None

@@ -3,6 +3,7 @@
 """
 import os
 import sys
+import traceback
 from datetime import datetime
 from typing import Optional
 
@@ -86,9 +87,12 @@ class Logger:
         """Предупреждение"""
         self._log("WARNING", "⚠️", Colors.YELLOW, message, details, use_stderr=True)
     
-    def error(self, message: str, details: Optional[str] = None):
+    def error(self, message: str, details: Optional[str] = None, exc_info: bool = False):
         """Ошибка - выводится в stderr для гарантированной видимости"""
         self._log("ERROR", "❌", Colors.RED, message, details, use_stderr=True)
+        if exc_info:
+            # Выводим traceback в stderr
+            traceback.print_exc(file=sys.stderr)
     
     def debug(self, message: str, details: Optional[str] = None):
         """Отладочное сообщение (только если включен DEBUG режим)"""

@@ -98,9 +98,9 @@ class YandexAgentService:
         """Отправка сообщения через LangGraph (Responses API)"""
         from ..graph.booking_state import BookingState
         
-        # Получаем или создаём conversation_history
-        conversation_history = await asyncio.to_thread(
-            self._get_or_create_conversation_history,
+        # Получаем last_response_id для продолжения диалога
+        last_response_id = await asyncio.to_thread(
+            self.ydb_client.get_last_response_id,
             chat_id
         )
         
@@ -111,7 +111,7 @@ class YandexAgentService:
         # Создаём начальное состояние
         initial_state: BookingState = {
             "message": input_with_time,
-            "conversation_history": conversation_history,
+            "previous_response_id": last_response_id,
             "chat_id": chat_id,
             "stage": None,
             "extracted_info": None,
@@ -125,13 +125,14 @@ class YandexAgentService:
             initial_state
         )
         
-        # Сохраняем обновлённую conversation_history
-        updated_history = result_state.get("conversation_history", conversation_history)
-        await asyncio.to_thread(
-            self._save_conversation_history,
-            chat_id,
-            updated_history
-        )
+        # Сохраняем response_id для следующего запроса
+        response_id = result_state.get("response_id")
+        if response_id:
+            await asyncio.to_thread(
+                self.ydb_client.save_response_id,
+                chat_id,
+                response_id
+            )
         
         # Извлекаем ответ
         answer = result_state.get("answer", "")
@@ -156,35 +157,12 @@ class YandexAgentService:
         """Отправка сообщения агенту через LangGraph"""
         return await self.send_to_agent_langgraph(chat_id, user_text)
     
-    def _get_or_create_conversation_history(self, chat_id: str) -> List[Dict[str, Any]]:
-        """Получить или создать conversation_history для чата"""
-        try:
-            # Пытаемся получить из YDB
-            history_json = self.ydb_client.get_conversation_history(chat_id)
-            if history_json:
-                import json
-                return json.loads(history_json)
-        except Exception as e:
-            logger.debug(f"Ошибка при получении conversation_history: {e}")
-        
-        # Если не нашли, возвращаем пустую историю
-        return []
-    
-    def _save_conversation_history(self, chat_id: str, history: List[Dict[str, Any]]):
-        """Сохранить conversation_history в YDB"""
-        try:
-            import json
-            history_json = json.dumps(history, ensure_ascii=False)
-            self.ydb_client.save_conversation_history(chat_id, history_json)
-        except Exception as e:
-            logger.error(f"Ошибка при сохранении conversation_history: {e}")
-    
     async def reset_context(self, chat_id: str):
         """Сброс контекста для чата"""
         try:
-            # Сбрасываем conversation_history
+            # Сбрасываем last_response_id
             await asyncio.to_thread(
-                self.ydb_client.reset_conversation_history,
+                self.ydb_client.reset_context,
                 chat_id
             )
             

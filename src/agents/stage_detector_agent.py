@@ -55,12 +55,12 @@ class StageDetectorAgent(BaseAgent):
             agent_name="Определитель стадий диалога"
         )
     
-    def detect_stage(self, message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> StageDetection:
+    def detect_stage(self, message: str, previous_response_id: Optional[str] = None) -> StageDetection:
         """Определение стадии диалога"""
         logger.debug(f"Начало определения стадии для сообщения: {message[:100]}")
         
         # Вызываем базовый метод агента
-        response = self(message, conversation_history)
+        response, response_id = self(message, previous_response_id)
         
         logger.debug(f"Получен ответ от агента определения стадии: {response[:200] if response else 'None/Empty'}")
         

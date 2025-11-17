@@ -48,13 +48,13 @@ class BaseAgent:
         # Результат CallManager (если был вызван)
         self._call_manager_result = None
         
-    def __call__(self, message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:
+    def __call__(self, message: str, previous_response_id: Optional[str] = None) -> tuple[str, Optional[str]]:
         """
         Выполнение запроса к агенту
         
         :param message: Сообщение для агента
-        :param conversation_history: История диалога (если None, создаётся новая)
-        :return: Ответ агента
+        :param previous_response_id: ID предыдущего ответа для продолжения диалога (None для нового диалога)
+        :return: Кортеж (ответ агента, response_id для сохранения)
         """
         try:
             # Очищаем предыдущие tool_calls
@@ -69,6 +69,7 @@ class BaseAgent:
             log_entry += f"{'='*80}\n"
             log_entry += f"Agent: {self.agent_name}\n"
             log_entry += f"Message:\n{message}\n"
+            log_entry += f"Previous Response ID: {previous_response_id or 'None (новый диалог)'}\n"
             llm_request_logger._write_raw(log_entry)
             
             # Логируем запрос к LLM
@@ -78,11 +79,11 @@ class BaseAgent:
                 assistant_id=None,
                 instruction=self.instruction,
                 tools=list(self.tools.values()),
-                messages=conversation_history or []
+                messages=None  # Responses API сам управляет историей через previous_response_id
             )
             
             # Выполняем запрос через orchestrator
-            result = self.orchestrator.run_turn(message, conversation_history)
+            result = self.orchestrator.run_turn(message, previous_response_id)
             
             # Сохраняем tool_calls
             if result.get("tool_calls"):
@@ -94,9 +95,10 @@ class BaseAgent:
                     "user_message": result.get("reply", ""),
                     "manager_alert": result.get("manager_alert"),
                 }
-                return "[CALL_MANAGER_RESULT]"
+                return "[CALL_MANAGER_RESULT]", result.get("response_id")
             
             reply = result.get("reply", "")
+            response_id = result.get("response_id")
                     
             # Логируем ответ от LLM
             llm_request_logger.log_response_from_llm(
@@ -105,24 +107,8 @@ class BaseAgent:
                 tool_calls=self._last_tool_calls if self._last_tool_calls else None,
                 raw_response=None
             )
-            
-            # Сохраняем результаты инструментов в историю
-            try:
-                chat_id = conversation_history[0].get("chat_id") if conversation_history else None
-                if chat_id and self._last_tool_calls:
-                    tool_history_service = get_tool_history_service()
-                    tool_history_service.save_tool_results(
-                        chat_id=chat_id,
-                        tool_results=self._last_tool_calls,
-                        cycle_metadata={
-                            "agent_name": self.agent_name,
-                            "timestamp": datetime.now().isoformat()
-                        }
-                    )
-            except Exception as e:
-                logger.debug(f"Ошибка при сохранении результатов инструментов в историю: {e}")
                 
-            return reply
+            return reply, response_id
         
         except Exception as e:
             import traceback

@@ -112,11 +112,11 @@ class BookingGraph:
         logger.info("Определение стадии диалога")
         
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         chat_id = state.get("chat_id")
         
         # Определяем стадию
-        stage_detection = self.stage_detector.detect_stage(message, conversation_history)
+        stage_detection = self.stage_detector.detect_stage(message, previous_response_id)
         
         # Проверяем, был ли вызван CallManager в StageDetectorAgent
         if hasattr(self.stage_detector, '_call_manager_result') and self.stage_detector._call_manager_result:
@@ -127,7 +127,8 @@ class BookingGraph:
                 "answer": escalation_result.get("user_message"),
                 "manager_alert": escalation_result.get("manager_alert"),
                 "agent_name": "StageDetectorAgent",
-                "used_tools": ["CallManager"]
+                "used_tools": ["CallManager"],
+                "response_id": None  # CallManager не возвращает response_id
             }
         
         return {
@@ -175,8 +176,17 @@ class BookingGraph:
         """
         used_tools = [tool["name"] for tool in agent._last_tool_calls] if hasattr(agent, '_last_tool_calls') and agent._last_tool_calls else []
         
+        # Агент всегда возвращает кортеж (answer, response_id)
+        # Извлекаем ответ и response_id
+        if isinstance(answer, tuple) and len(answer) == 2:
+            answer_text, response_id = answer
+        else:
+            # Если по какой-то причине не кортеж, response_id остается None
+            answer_text = answer
+            response_id = None
+        
         # Проверяем, был ли вызван CallManager через инструмент
-        if answer == "[CALL_MANAGER_RESULT]" and hasattr(agent, '_call_manager_result') and agent._call_manager_result:
+        if answer_text == "[CALL_MANAGER_RESULT]" and hasattr(agent, '_call_manager_result') and agent._call_manager_result:
             escalation_result = agent._call_manager_result
             chat_id = state.get("chat_id", "unknown")
             
@@ -186,90 +196,88 @@ class BookingGraph:
                 "answer": escalation_result.get("user_message"),
                 "manager_alert": escalation_result.get("manager_alert"),
                 "agent_name": agent_name,
-                "used_tools": used_tools
+                "used_tools": used_tools,
+                "response_id": response_id
             }
         
-        # Обновляем conversation_history из результата агента
-        conversation_history = state.get("conversation_history") or []
-        if hasattr(agent, 'orchestrator') and hasattr(agent.orchestrator, '_last_conversation_history'):
-            if agent.orchestrator._last_conversation_history is not None:
-                conversation_history = agent.orchestrator._last_conversation_history
+        # Обычный ответ агента
+        answer = answer_text
         
         return {
             "answer": answer,
             "agent_name": agent_name,
             "used_tools": used_tools,
-            "conversation_history": conversation_history or []
+            "response_id": response_id
         }
     
     def _handle_greeting(self, state: BookingState) -> BookingState:
         """Обработка приветствия"""
         logger.info("Обработка приветствия")
         message = state["message"]
-        conversation_history = state.get("conversation_history") or []
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.greeting_agent(message, conversation_history)
-        return self._process_agent_result(self.greeting_agent, answer, state, "GreetingAgent")
+        agent_result = self.greeting_agent(message, previous_response_id)
+        return self._process_agent_result(self.greeting_agent, agent_result, state, "GreetingAgent")
     
     def _handle_information_gathering(self, state: BookingState) -> BookingState:
         """Обработка сбора информации"""
         logger.info("Обработка сбора информации")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.information_gathering_agent(message, conversation_history)
-        return self._process_agent_result(self.information_gathering_agent, answer, state, "InformationGatheringAgent")
+        agent_result = self.information_gathering_agent(message, previous_response_id)
+        return self._process_agent_result(self.information_gathering_agent, agent_result, state, "InformationGatheringAgent")
     
     def _handle_booking(self, state: BookingState) -> BookingState:
         """Обработка бронирования"""
         logger.info("Обработка бронирования")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.booking_agent(message, conversation_history)
-        return self._process_agent_result(self.booking_agent, answer, state, "BookingAgent")
+        agent_result = self.booking_agent(message, previous_response_id)
+        return self._process_agent_result(self.booking_agent, agent_result, state, "BookingAgent")
     
     def _handle_booking_to_master(self, state: BookingState) -> BookingState:
         """Обработка бронирования к мастеру"""
         logger.info("Обработка бронирования к мастеру")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.booking_to_master_agent(message, conversation_history)
-        return self._process_agent_result(self.booking_to_master_agent, answer, state, "BookingToMasterAgent")
+        agent_result = self.booking_to_master_agent(message, previous_response_id)
+        return self._process_agent_result(self.booking_to_master_agent, agent_result, state, "BookingToMasterAgent")
     
     def _handle_cancellation_request(self, state: BookingState) -> BookingState:
         """Обработка отмены"""
         logger.info("Обработка отмены")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.cancel_agent(message, conversation_history)
-        return self._process_agent_result(self.cancel_agent, answer, state, "CancelBookingAgent")
+        agent_result = self.cancel_agent(message, previous_response_id)
+        return self._process_agent_result(self.cancel_agent, agent_result, state, "CancelBookingAgent")
     
     def _handle_reschedule(self, state: BookingState) -> BookingState:
         """Обработка переноса"""
         logger.info("Обработка переноса")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.reschedule_agent(message, conversation_history)
-        return self._process_agent_result(self.reschedule_agent, answer, state, "RescheduleAgent")
+        agent_result = self.reschedule_agent(message, previous_response_id)
+        return self._process_agent_result(self.reschedule_agent, agent_result, state, "RescheduleAgent")
     
     def _handle_view_my_booking(self, state: BookingState) -> BookingState:
         """Обработка просмотра записей"""
         logger.info("Обработка просмотра записей")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.view_my_booking_agent(message, conversation_history)
-        return self._process_agent_result(self.view_my_booking_agent, answer, state, "ViewMyBookingAgent")
+        agent_result = self.view_my_booking_agent(message, previous_response_id)
+        return self._process_agent_result(self.view_my_booking_agent, agent_result, state, "ViewMyBookingAgent")
     
     def _handle_tool_tester(self, state: BookingState) -> BookingState:
         """Обработка тестирования инструментов"""
         logger.info("Обработка тестирования инструментов")
         message = state["message"]
-        conversation_history = state.get("conversation_history")
+        previous_response_id = state.get("previous_response_id")
         
-        answer = self.tool_tester_agent(message, conversation_history)
-        return self._process_agent_result(self.tool_tester_agent, answer, state, "ToolTesterAgent")
+        agent_result = self.tool_tester_agent(message, previous_response_id)
+        return self._process_agent_result(self.tool_tester_agent, agent_result, state, "ToolTesterAgent")
