@@ -1,12 +1,12 @@
 """
 Пакет для LangGraph графов
 """
-from .booking_state import BookingState
-from .booking_graph import BookingGraph
+from .conversation_state import ConversationState
+from .main_graph import MainGraph
 
 __all__ = [
-    "BookingState",
-    "BookingGraph",
+    "ConversationState",
+    "MainGraph",
 ]
 
 

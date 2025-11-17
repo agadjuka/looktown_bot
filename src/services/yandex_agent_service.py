@@ -11,7 +11,7 @@ from ..ydb_client import get_ydb_client
 from .auth_service import AuthService
 from .debug_service import DebugService
 from .logger_service import logger
-from ..graph.booking_graph import BookingGraph
+from ..graph.main_graph import MainGraph
 from .langgraph_service import LangGraphService
 import requests
 
@@ -29,7 +29,7 @@ class YandexAgentService:
         
         # Ленивая инициализация LangGraph
         self._langgraph_service = None
-        self._booking_graph = None
+        self._main_graph = None
         
         # Инициализация кэша времени
         self._time_cache = None
@@ -43,11 +43,11 @@ class YandexAgentService:
         return self._langgraph_service
     
     @property
-    def booking_graph(self) -> BookingGraph:
-        """Ленивая инициализация BookingGraph"""
-        if self._booking_graph is None:
-            self._booking_graph = BookingGraph(self.langgraph_service)
-        return self._booking_graph
+    def main_graph(self) -> MainGraph:
+        """Ленивая инициализация MainGraph"""
+        if self._main_graph is None:
+            self._main_graph = MainGraph(self.langgraph_service)
+        return self._main_graph
     
     def _get_moscow_time(self) -> str:
         """Получить текущее время и дату в московском часовом поясе через внешний API"""
@@ -96,7 +96,7 @@ class YandexAgentService:
     
     async def send_to_agent_langgraph(self, chat_id: str, user_text: str) -> dict:
         """Отправка сообщения через LangGraph (Responses API)"""
-        from ..graph.booking_state import BookingState
+        from ..graph.conversation_state import ConversationState
         
         # Получаем last_response_id для продолжения диалога
         last_response_id = await asyncio.to_thread(
@@ -109,7 +109,7 @@ class YandexAgentService:
         input_with_time = f"[{moscow_time}] {user_text}"
         
         # Создаём начальное состояние
-        initial_state: BookingState = {
+        initial_state: ConversationState = {
             "message": input_with_time,
             "previous_response_id": last_response_id,
             "chat_id": chat_id,
@@ -121,7 +121,7 @@ class YandexAgentService:
         
         # Выполняем граф
         result_state = await asyncio.to_thread(
-            self.booking_graph.compiled_graph.invoke,
+            self.main_graph.compiled_graph.invoke,
             initial_state
         )
         

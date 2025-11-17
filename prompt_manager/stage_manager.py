@@ -22,7 +22,7 @@ class StageManager:
             self.project_root = Path(project_root)
         
         self.agents_dir = self.project_root / "src" / "agents"
-        self.graph_file = self.project_root / "src" / "graph" / "booking_graph.py"
+        self.graph_file = self.project_root / "src" / "graph" / "main_graph.py"
         self.dialogue_stages_file = self.project_root / "src" / "agents" / "dialogue_stages.py"
         self.stage_detector_file = self.project_root / "src" / "agents" / "stage_detector_agent.py"
     
@@ -381,7 +381,7 @@ class {class_name}(BaseAgent):
             return {'success': False, 'error': str(e)}
     
     def _remove_from_graph(self, class_name: str, stage_key: str):
-        """Удалить стадию из booking_graph.py"""
+        """Удалить стадию из main_graph.py"""
         if not class_name or not self.graph_file.exists():
             return False
         
@@ -414,7 +414,7 @@ class {class_name}(BaseAgent):
             content = re.sub(edge_pattern, '', content)
             
             # Удаляем обработчик
-            handler_pattern = rf'def _handle_{re.escape(stage_key)}\(self, state: BookingState\) -> BookingState:.*?return.*?\n\n'
+            handler_pattern = rf'def _handle_{re.escape(stage_key)}\(self, state: ConversationState\) -> ConversationState:.*?return.*?\n\n'
             content = re.sub(handler_pattern, '', content, flags=re.DOTALL)
             
             with open(self.graph_file, 'w', encoding='utf-8') as f:
@@ -428,7 +428,7 @@ class {class_name}(BaseAgent):
             return False
     
     def _add_to_graph(self, class_name: str, stage_key: str, stage_name: str):
-        """Добавить стадию в booking_graph.py"""
+        """Добавить стадию в main_graph.py"""
         import logging
         logger = logging.getLogger(__name__)
         logger.info(f"=== ДОБАВЛЕНИЕ В ГРАФ ===")
@@ -542,7 +542,7 @@ class {class_name}(BaseAgent):
                 logger.info("Рёбра уже добавлены")
             
             # Добавляем обработчик (после _handle_reschedule, перед концом класса)
-            handler_code = f'''    def _handle_{stage_key}(self, state: BookingState) -> BookingState:
+            handler_code = f'''    def _handle_{stage_key}(self, state: ConversationState) -> ConversationState:
         """Обработка стадии {stage_name}"""
         logger.info("Обработка стадии {stage_key}")
         message = state["message"]

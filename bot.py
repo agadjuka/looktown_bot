@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
+from telegram.error import TimedOut
 from service_factory import get_yandex_agent_service
 from src.services.logger_service import logger
 from src.services.date_normalizer import normalize_dates_in_text
@@ -70,7 +71,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     
     logger.telegram("Получено сообщение", chat_id)
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    
+    # Пытаемся показать индикатор печати, но не критично, если не получится
+    try:
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    except TimedOut:
+        logger.warning("Таймаут при отправке send_chat_action, продолжаем обработку", chat_id)
+    except Exception as e:
+        logger.warning(f"Ошибка при отправке send_chat_action: {e}, продолжаем обработку", chat_id)
     
     agent_response = await send_to_agent(user_message, chat_id)
     # Ожидаем словарь: {"user_message": str, "manager_alert": Optional[str]}
@@ -118,4 +126,7 @@ def main():
     application.run_polling()
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Бот остановлен пользователем")

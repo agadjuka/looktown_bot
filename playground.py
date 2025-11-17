@@ -44,8 +44,8 @@ def format_text_with_line_breaks(text: str) -> str:
 
 # Импорты для работы с агентами
 from src.services.langgraph_service import LangGraphService
-from src.graph.booking_graph import BookingGraph
-from src.graph.booking_state import BookingState
+from src.graph.main_graph import MainGraph
+from src.graph.conversation_state import ConversationState
 from src.agents.dialogue_stages import DialogueStage
 from src.services.llm_request_logger import llm_request_logger
 from src.services.retry_service import RetryService
@@ -94,8 +94,8 @@ if "langgraph_service" not in st.session_state:
         # Создаём сервис для Playground
         st.session_state.langgraph_service = LangGraphService()
         # Очищаем кэш перед созданием нового графа, чтобы агенты пересоздались с актуальными инструментами
-        BookingGraph.clear_cache()
-        st.session_state.booking_graph = BookingGraph(st.session_state.langgraph_service)
+        MainGraph.clear_cache()
+        st.session_state.main_graph = MainGraph(st.session_state.langgraph_service)
         st.session_state.conversation_history = []
         st.session_state.messages = []
         st.session_state.tool_calls_history = []
@@ -262,7 +262,7 @@ if user_input:
         with st.spinner("Агент думает..."):
             try:
                 # Создаём начальное состояние
-                initial_state: BookingState = {
+                initial_state: ConversationState = {
                     "message": user_input,
                     "conversation_history": st.session_state.get("conversation_history", []),
                     "stage": None,
@@ -276,7 +276,7 @@ if user_input:
                 # Функция для выполнения графа (для retry на нижнем уровне)
                 def _execute_graph():
                     """Внутренняя функция для выполнения графа"""
-                    return st.session_state.booking_graph.compiled_graph.invoke(initial_state)
+                    return st.session_state.main_graph.compiled_graph.invoke(initial_state)
                 
                 # Выполняем граф с retry на нижнем уровне
                 result_state = RetryService.execute_with_retry(
@@ -329,20 +329,20 @@ if user_input:
                 
                 # Получаем полные результаты инструментов из агента
                 tool_calls_results = []
-                if agent_name and hasattr(st.session_state.booking_graph, '_get_agent_by_name'):
-                    agent = st.session_state.booking_graph._get_agent_by_name(agent_name)
+                if agent_name and hasattr(st.session_state.main_graph, '_get_agent_by_name'):
+                    agent = st.session_state.main_graph._get_agent_by_name(agent_name)
                     if agent and hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
                         tool_calls_results = agent._last_tool_calls
                 else:
                     # Альтернативный способ получения tool_calls из графа
                     agent_map = {
-                        "GreetingAgent": getattr(st.session_state.booking_graph, 'greeting_agent', None),
-                        "BookingAgent": getattr(st.session_state.booking_graph, 'booking_agent', None),
-                        "BookingToMasterAgent": getattr(st.session_state.booking_graph, 'booking_to_master_agent', None),
-                        "CancelBookingAgent": getattr(st.session_state.booking_graph, 'cancel_agent', None),
-                        "RescheduleAgent": getattr(st.session_state.booking_graph, 'reschedule_agent', None),
-                        "ViewMyBookingAgent": getattr(st.session_state.booking_graph, 'view_my_booking_agent', None),
-                        "InformationGatheringAgent": getattr(st.session_state.booking_graph, 'information_gathering_agent', None),
+                        "GreetingAgent": getattr(st.session_state.main_graph, 'greeting_agent', None),
+                        "BookingAgent": getattr(st.session_state.main_graph, 'booking_agent', None),
+                        "BookingToMasterAgent": getattr(st.session_state.main_graph, 'booking_to_master_agent', None),
+                        "CancelBookingAgent": getattr(st.session_state.main_graph, 'cancel_agent', None),
+                        "RescheduleAgent": getattr(st.session_state.main_graph, 'reschedule_agent', None),
+                        "ViewMyBookingAgent": getattr(st.session_state.main_graph, 'view_my_booking_agent', None),
+                        "InformationGatheringAgent": getattr(st.session_state.main_graph, 'information_gathering_agent', None),
                     }
                     agent = agent_map.get(agent_name)
                     if agent and hasattr(agent, '_last_tool_calls') and agent._last_tool_calls:
@@ -489,22 +489,22 @@ st.divider()
 stages_list = [stage.value for stage in DialogueStage]
 stages_text = ", ".join([f"`{stage}`" for stage in stages_list])
 
-# Динамически получаем список агентов из BookingGraph
+# Динамически получаем список агентов из MainGraph
 try:
-    # Получаем агентов из кэша BookingGraph
+    # Получаем агентов из кэша MainGraph
     agents_list = []
-    if hasattr(st.session_state, 'booking_graph') and st.session_state.booking_graph:
+    if hasattr(st.session_state, 'main_graph') and st.session_state.main_graph:
         # Получаем все агенты из графа
         agents_list.append("StageDetectorAgent")
-        if hasattr(st.session_state.booking_graph, 'greeting_agent'):
+        if hasattr(st.session_state.main_graph, 'greeting_agent'):
             agents_list.append("GreetingAgent")
-        if hasattr(st.session_state.booking_graph, 'booking_agent'):
+        if hasattr(st.session_state.main_graph, 'booking_agent'):
             agents_list.append("BookingAgent")
-        if hasattr(st.session_state.booking_graph, 'cancel_agent'):
+        if hasattr(st.session_state.main_graph, 'cancel_agent'):
             agents_list.append("CancelBookingAgent")
-        if hasattr(st.session_state.booking_graph, 'reschedule_agent'):
+        if hasattr(st.session_state.main_graph, 'reschedule_agent'):
             agents_list.append("RescheduleAgent")
-        if hasattr(st.session_state.booking_graph, 'salon_info_agent'):
+        if hasattr(st.session_state.main_graph, 'salon_info_agent'):
             agents_list.append("SalonInfoAgent")
     
     # Если список пустой, используем дефолтный

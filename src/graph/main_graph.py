@@ -1,9 +1,9 @@
 """
-Граф состояний для обработки бронирований (Responses API)
+Основной граф состояний для обработки всех стадий диалога (Responses API)
 """
 from typing import Literal
 from langgraph.graph import StateGraph, START, END
-from .booking_state import BookingState
+from .conversation_state import ConversationState
 from ..agents.stage_detector_agent import StageDetectorAgent
 from ..agents.booking_agent import BookingAgent
 from ..agents.booking_to_master_agent import BookingToMasterAgent
@@ -18,8 +18,8 @@ from ..services.langgraph_service import LangGraphService
 from ..services.logger_service import logger
 
 
-class BookingGraph:
-    """Граф состояний для обработки бронирований"""
+class MainGraph:
+    """Основной граф состояний для обработки всех стадий диалога"""
     
     # Кэш для агентов (чтобы не создавать их заново при каждом создании графа)
     _agents_cache = {}
@@ -35,9 +35,9 @@ class BookingGraph:
         # Используем кэш для агентов
         cache_key = id(langgraph_service)
         
-        if cache_key not in BookingGraph._agents_cache:
+        if cache_key not in MainGraph._agents_cache:
             # Создаём агентов только если их ещё нет в кэше
-            BookingGraph._agents_cache[cache_key] = {
+            MainGraph._agents_cache[cache_key] = {
                 'stage_detector': StageDetectorAgent(langgraph_service),
                 'greeting': GreetingAgent(langgraph_service),
                 'information_gathering': InformationGatheringAgent(langgraph_service),
@@ -50,7 +50,7 @@ class BookingGraph:
             }
         
         # Используем агентов из кэша
-        agents = BookingGraph._agents_cache[cache_key]
+        agents = MainGraph._agents_cache[cache_key]
         self.stage_detector = agents['stage_detector']
         self.greeting_agent = agents['greeting']
         self.information_gathering_agent = agents['information_gathering']
@@ -67,7 +67,7 @@ class BookingGraph:
     
     def _create_graph(self) -> StateGraph:
         """Создание графа состояний"""
-        graph = StateGraph(BookingState)
+        graph = StateGraph(ConversationState)
         
         # Добавляем узлы
         graph.add_node("detect_stage", self._detect_stage)
@@ -107,7 +107,7 @@ class BookingGraph:
         graph.add_edge("handle_tool_tester", END)
         return graph
     
-    def _detect_stage(self, state: BookingState) -> BookingState:
+    def _detect_stage(self, state: ConversationState) -> ConversationState:
         """Узел определения стадии"""
         logger.info("Определение стадии диалога")
         
@@ -135,7 +135,7 @@ class BookingGraph:
             "stage": stage_detection.stage
         }
     
-    def _route_after_detect(self, state: BookingState) -> Literal[
+    def _route_after_detect(self, state: ConversationState) -> Literal[
         "greeting", "information_gathering", "booking", "booking_to_master",
         "cancellation_request", "reschedule", "view_my_booking", "tool_tester", "end"
     ]:
@@ -161,7 +161,7 @@ class BookingGraph:
         
         return stage
     
-    def _process_agent_result(self, agent, answer: str, state: BookingState, agent_name: str) -> BookingState:
+    def _process_agent_result(self, agent, answer: str, state: ConversationState, agent_name: str) -> ConversationState:
         """
         Обработка результата агента с проверкой на CallManager
         
@@ -210,7 +210,7 @@ class BookingGraph:
             "response_id": response_id
         }
     
-    def _handle_greeting(self, state: BookingState) -> BookingState:
+    def _handle_greeting(self, state: ConversationState) -> ConversationState:
         """Обработка приветствия"""
         logger.info("Обработка приветствия")
         message = state["message"]
@@ -220,7 +220,7 @@ class BookingGraph:
         agent_result = self.greeting_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.greeting_agent, agent_result, state, "GreetingAgent")
     
-    def _handle_information_gathering(self, state: BookingState) -> BookingState:
+    def _handle_information_gathering(self, state: ConversationState) -> ConversationState:
         """Обработка сбора информации"""
         logger.info("Обработка сбора информации")
         message = state["message"]
@@ -230,7 +230,7 @@ class BookingGraph:
         agent_result = self.information_gathering_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.information_gathering_agent, agent_result, state, "InformationGatheringAgent")
     
-    def _handle_booking(self, state: BookingState) -> BookingState:
+    def _handle_booking(self, state: ConversationState) -> ConversationState:
         """Обработка бронирования"""
         logger.info("Обработка бронирования")
         message = state["message"]
@@ -240,7 +240,7 @@ class BookingGraph:
         agent_result = self.booking_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.booking_agent, agent_result, state, "BookingAgent")
     
-    def _handle_booking_to_master(self, state: BookingState) -> BookingState:
+    def _handle_booking_to_master(self, state: ConversationState) -> ConversationState:
         """Обработка бронирования к мастеру"""
         logger.info("Обработка бронирования к мастеру")
         message = state["message"]
@@ -250,7 +250,7 @@ class BookingGraph:
         agent_result = self.booking_to_master_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.booking_to_master_agent, agent_result, state, "BookingToMasterAgent")
     
-    def _handle_cancellation_request(self, state: BookingState) -> BookingState:
+    def _handle_cancellation_request(self, state: ConversationState) -> ConversationState:
         """Обработка отмены"""
         logger.info("Обработка отмены")
         message = state["message"]
@@ -260,7 +260,7 @@ class BookingGraph:
         agent_result = self.cancel_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.cancel_agent, agent_result, state, "CancelBookingAgent")
     
-    def _handle_reschedule(self, state: BookingState) -> BookingState:
+    def _handle_reschedule(self, state: ConversationState) -> ConversationState:
         """Обработка переноса"""
         logger.info("Обработка переноса")
         message = state["message"]
@@ -270,7 +270,7 @@ class BookingGraph:
         agent_result = self.reschedule_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.reschedule_agent, agent_result, state, "RescheduleAgent")
     
-    def _handle_view_my_booking(self, state: BookingState) -> BookingState:
+    def _handle_view_my_booking(self, state: ConversationState) -> ConversationState:
         """Обработка просмотра записей"""
         logger.info("Обработка просмотра записей")
         message = state["message"]
@@ -280,7 +280,7 @@ class BookingGraph:
         agent_result = self.view_my_booking_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.view_my_booking_agent, agent_result, state, "ViewMyBookingAgent")
     
-    def _handle_tool_tester(self, state: BookingState) -> BookingState:
+    def _handle_tool_tester(self, state: ConversationState) -> ConversationState:
         """Обработка тестирования инструментов"""
         logger.info("Обработка тестирования инструментов")
         message = state["message"]
@@ -289,3 +289,4 @@ class BookingGraph:
         
         agent_result = self.tool_tester_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.tool_tester_agent, agent_result, state, "ToolTesterAgent")
+
