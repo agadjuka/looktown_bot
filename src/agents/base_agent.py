@@ -48,12 +48,13 @@ class BaseAgent:
         # Результат CallManager (если был вызван)
         self._call_manager_result = None
         
-    def __call__(self, message: str, previous_response_id: Optional[str] = None) -> tuple[str, Optional[str]]:
+    def __call__(self, message: str, previous_response_id: Optional[str] = None, chat_id: Optional[str] = None) -> tuple[str, Optional[str]]:
         """
         Выполнение запроса к агенту
         
         :param message: Сообщение для агента
         :param previous_response_id: ID предыдущего ответа для продолжения диалога (None для нового диалога)
+        :param chat_id: ID чата в Telegram (для передачи в инструменты)
         :return: Кортеж (ответ агента, response_id для сохранения)
         """
         try:
@@ -83,7 +84,7 @@ class BaseAgent:
             )
             
             # Выполняем запрос через orchestrator
-            result = self.orchestrator.run_turn(message, previous_response_id)
+            result = self.orchestrator.run_turn(message, previous_response_id, chat_id=chat_id)
             
             # Сохраняем tool_calls
             if result.get("tool_calls"):

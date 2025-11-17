@@ -43,6 +43,7 @@ class ResponsesOrchestrator:
         self,
         user_message: str,
         previous_response_id: Optional[str] = None,
+        chat_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Один полный ход диалога
@@ -50,6 +51,7 @@ class ResponsesOrchestrator:
         Args:
             user_message: Сообщение пользователя
             previous_response_id: ID предыдущего ответа для продолжения диалога (None для нового диалога)
+            chat_id: ID чата в Telegram (для передачи в инструменты)
             
         Returns:
             Словарь с ключами:
@@ -154,7 +156,7 @@ class ResponsesOrchestrator:
                 # Вызываем инструмент
                 try:
                     # Передаём None для conversation_history, так как Responses API сам управляет историей
-                    result = self.tools_registry.call_tool(func_name, args, conversation_history=None)
+                    result = self.tools_registry.call_tool(func_name, args, conversation_history=None, chat_id=chat_id)
                     
                     # Сохраняем информацию о вызове инструмента
                     tool_call_info = {

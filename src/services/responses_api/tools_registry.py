@@ -47,9 +47,9 @@ class ResponsesToolsRegistry:
                 # Большинство инструментов не используют thread напрямую
                 class MockThread:
                     """Минимальный mock Thread для совместимости с Responses API"""
-                    def __init__(self, conversation_history=None):
+                    def __init__(self, conversation_history=None, chat_id=None):
                         self.id = None
-                        self.chat_id = None
+                        self.chat_id = chat_id
                         self._conversation_history = conversation_history or []
                     
                     def __iter__(self):
@@ -71,9 +71,10 @@ class ResponsesToolsRegistry:
                         
                         return iter(messages)
                 
-                # Получаем conversation_history из kwargs, если передан
+                # Получаем conversation_history и chat_id из kwargs, если переданы
                 conversation_history = kwargs.pop('_conversation_history', None)
-                mock_thread = MockThread(conversation_history=conversation_history)
+                chat_id = kwargs.pop('_chat_id', None)
+                mock_thread = MockThread(conversation_history=conversation_history, chat_id=chat_id)
                 
                 # Вызываем process
                 result = tool_instance.process(mock_thread)
@@ -101,7 +102,7 @@ class ResponsesToolsRegistry:
         for tool_class in tool_classes:
             self.register_tool(tool_class)
     
-    def call_tool(self, name: str, arguments: Dict[str, Any], conversation_history: Optional[List[Dict[str, Any]]] = None) -> Any:
+    def call_tool(self, name: str, arguments: Dict[str, Any], conversation_history: Optional[List[Dict[str, Any]]] = None, chat_id: Optional[str] = None) -> Any:
         """
         Вызов зарегистрированного инструмента
         
@@ -109,6 +110,7 @@ class ResponsesToolsRegistry:
             name: Имя инструмента
             arguments: Аргументы для инструмента
             conversation_history: История диалога (для передачи в MockThread)
+            chat_id: ID чата в Telegram (для передачи в MockThread)
             
         Returns:
             Результат выполнения инструмента
@@ -117,9 +119,11 @@ class ResponsesToolsRegistry:
         if fn is None:
             raise RuntimeError(f"Инструмент '{name}' не зарегистрирован")
         
-        # Передаём conversation_history в tool_wrapper через специальный параметр
+        # Передаём conversation_history и chat_id в tool_wrapper через специальные параметры
         if conversation_history is not None:
             arguments['_conversation_history'] = conversation_history
+        if chat_id is not None:
+            arguments['_chat_id'] = chat_id
         
         return fn(**arguments)
     

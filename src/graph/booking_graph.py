@@ -116,7 +116,7 @@ class BookingGraph:
         chat_id = state.get("chat_id")
         
         # Определяем стадию
-        stage_detection = self.stage_detector.detect_stage(message, previous_response_id)
+        stage_detection = self.stage_detector.detect_stage(message, previous_response_id, chat_id=chat_id)
         
         # Проверяем, был ли вызван CallManager в StageDetectorAgent
         if hasattr(self.stage_detector, '_call_manager_result') and self.stage_detector._call_manager_result:
@@ -215,8 +215,9 @@ class BookingGraph:
         logger.info("Обработка приветствия")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.greeting_agent(message, previous_response_id)
+        agent_result = self.greeting_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.greeting_agent, agent_result, state, "GreetingAgent")
     
     def _handle_information_gathering(self, state: BookingState) -> BookingState:
@@ -224,8 +225,9 @@ class BookingGraph:
         logger.info("Обработка сбора информации")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.information_gathering_agent(message, previous_response_id)
+        agent_result = self.information_gathering_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.information_gathering_agent, agent_result, state, "InformationGatheringAgent")
     
     def _handle_booking(self, state: BookingState) -> BookingState:
@@ -233,8 +235,9 @@ class BookingGraph:
         logger.info("Обработка бронирования")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.booking_agent(message, previous_response_id)
+        agent_result = self.booking_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.booking_agent, agent_result, state, "BookingAgent")
     
     def _handle_booking_to_master(self, state: BookingState) -> BookingState:
@@ -242,8 +245,9 @@ class BookingGraph:
         logger.info("Обработка бронирования к мастеру")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.booking_to_master_agent(message, previous_response_id)
+        agent_result = self.booking_to_master_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.booking_to_master_agent, agent_result, state, "BookingToMasterAgent")
     
     def _handle_cancellation_request(self, state: BookingState) -> BookingState:
@@ -251,8 +255,9 @@ class BookingGraph:
         logger.info("Обработка отмены")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.cancel_agent(message, previous_response_id)
+        agent_result = self.cancel_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.cancel_agent, agent_result, state, "CancelBookingAgent")
     
     def _handle_reschedule(self, state: BookingState) -> BookingState:
@@ -260,8 +265,9 @@ class BookingGraph:
         logger.info("Обработка переноса")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.reschedule_agent(message, previous_response_id)
+        agent_result = self.reschedule_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.reschedule_agent, agent_result, state, "RescheduleAgent")
     
     def _handle_view_my_booking(self, state: BookingState) -> BookingState:
@@ -269,8 +275,9 @@ class BookingGraph:
         logger.info("Обработка просмотра записей")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.view_my_booking_agent(message, previous_response_id)
+        agent_result = self.view_my_booking_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.view_my_booking_agent, agent_result, state, "ViewMyBookingAgent")
     
     def _handle_tool_tester(self, state: BookingState) -> BookingState:
@@ -278,6 +285,7 @@ class BookingGraph:
         logger.info("Обработка тестирования инструментов")
         message = state["message"]
         previous_response_id = state.get("previous_response_id")
+        chat_id = state.get("chat_id")
         
-        agent_result = self.tool_tester_agent(message, previous_response_id)
+        agent_result = self.tool_tester_agent(message, previous_response_id, chat_id=chat_id)
         return self._process_agent_result(self.tool_tester_agent, agent_result, state, "ToolTesterAgent")
