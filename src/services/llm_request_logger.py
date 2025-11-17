@@ -29,8 +29,8 @@ class LLMRequestLogger:
             return
         
         # Проверяем, нужно ли сохранять логи в файлы
-        # В облачной версии (контейнере) отключаем сохранение логов
-        self.logging_enabled = os.getenv('ENABLE_DEBUG_LOGS', 'false').lower() == 'true'
+        # По умолчанию включено, можно отключить через переменную окружения DISABLE_DEBUG_LOGS=true
+        self.logging_enabled = os.getenv('DISABLE_DEBUG_LOGS', 'false').lower() != 'true'
         
         if self.logging_enabled:
             # Создаём папку для логов только если включено
@@ -290,8 +290,40 @@ class LLMRequestLogger:
         }
         
         try:
-            # Пытаемся получить данные из объекта SDK инструмента
-            if hasattr(tool, 'function'):
+            # Сначала проверяем прямые атрибуты объекта (для FunctionTool из SDK)
+            # У FunctionTool атрибуты name, description, parameters находятся напрямую
+            if hasattr(tool, 'name'):
+                tool_schema['function']['name'] = tool.name
+            if hasattr(tool, 'description'):
+                tool_schema['function']['description'] = tool.description
+            if hasattr(tool, 'parameters'):
+                params = tool.parameters
+                if isinstance(params, dict):
+                    tool_schema['function']['parameters'] = params
+                elif hasattr(params, 'model_dump'):
+                    tool_schema['function']['parameters'] = params.model_dump()
+                elif hasattr(params, 'dict'):
+                    tool_schema['function']['parameters'] = params.dict()
+                elif hasattr(params, '__dict__'):
+                    # Пытаемся получить параметры из __dict__
+                    params_dict = {}
+                    for key, value in params.__dict__.items():
+                        if not key.startswith('_'):
+                            try:
+                                json.dumps(value, default=str)
+                                params_dict[key] = value
+                            except:
+                                params_dict[key] = str(value)
+                    tool_schema['function']['parameters'] = params_dict if params_dict else {}
+                else:
+                    # Пытаемся преобразовать в dict
+                    try:
+                        tool_schema['function']['parameters'] = json.loads(json.dumps(params, default=str))
+                    except:
+                        tool_schema['function']['parameters'] = str(params)
+            
+            # Если не удалось извлечь через прямые атрибуты, пробуем через function
+            if not tool_schema['function'].get('name') and hasattr(tool, 'function'):
                 func = tool.function
                 
                 # Имя функции
@@ -299,58 +331,35 @@ class LLMRequestLogger:
                     tool_schema['function']['name'] = func.name
                 elif isinstance(func, dict) and 'name' in func:
                     tool_schema['function']['name'] = func['name']
-                elif hasattr(tool, 'name'):
-                    tool_schema['function']['name'] = tool.name
                 
                 # Описание функции
-                if hasattr(func, 'description'):
-                    tool_schema['function']['description'] = func.description
-                elif isinstance(func, dict) and 'description' in func:
-                    tool_schema['function']['description'] = func['description']
-                elif hasattr(tool, 'description'):
-                    tool_schema['function']['description'] = tool.description
+                if not tool_schema['function'].get('description'):
+                    if hasattr(func, 'description'):
+                        tool_schema['function']['description'] = func.description
+                    elif isinstance(func, dict) and 'description' in func:
+                        tool_schema['function']['description'] = func['description']
                 
                 # Параметры функции
-                if hasattr(func, 'parameters'):
-                    params = func.parameters
-                    if isinstance(params, dict):
-                        tool_schema['function']['parameters'] = params
-                    elif hasattr(params, 'model_dump'):
-                        tool_schema['function']['parameters'] = params.model_dump()
-                    elif hasattr(params, 'dict'):
-                        tool_schema['function']['parameters'] = params.dict()
-                    elif hasattr(params, '__dict__'):
-                        # Пытаемся получить параметры из __dict__
-                        params_dict = {}
-                        for key, value in params.__dict__.items():
-                            if not key.startswith('_'):
-                                try:
-                                    json.dumps(value, default=str)
-                                    params_dict[key] = value
-                                except:
-                                    params_dict[key] = str(value)
-                        tool_schema['function']['parameters'] = params_dict if params_dict else {}
-                    else:
-                        # Пытаемся преобразовать в dict
-                        try:
-                            tool_schema['function']['parameters'] = json.loads(json.dumps(params, default=str))
-                        except:
-                            tool_schema['function']['parameters'] = str(params)
-                elif isinstance(func, dict) and 'parameters' in func:
-                    tool_schema['function']['parameters'] = func['parameters']
-                elif hasattr(tool, 'parameters'):
-                    params = tool.parameters
-                    if isinstance(params, dict):
-                        tool_schema['function']['parameters'] = params
-                    else:
-                        tool_schema['function']['parameters'] = str(params)
+                if not tool_schema['function'].get('parameters'):
+                    if hasattr(func, 'parameters'):
+                        params = func.parameters
+                        if isinstance(params, dict):
+                            tool_schema['function']['parameters'] = params
+                        elif hasattr(params, 'model_dump'):
+                            tool_schema['function']['parameters'] = params.model_dump()
+                        elif hasattr(params, 'dict'):
+                            tool_schema['function']['parameters'] = params.dict()
+                        else:
+                            try:
+                                tool_schema['function']['parameters'] = json.loads(json.dumps(params, default=str))
+                            except:
+                                tool_schema['function']['parameters'] = str(params)
+                    elif isinstance(func, dict) and 'parameters' in func:
+                        tool_schema['function']['parameters'] = func['parameters']
             
-            # Если не удалось извлечь через function, пробуем другие способы
+            # Если все еще не удалось извлечь, пробуем другие способы
             if not tool_schema['function'].get('name'):
-                # Пытаемся получить имя из самого объекта tool
-                if hasattr(tool, 'name'):
-                    tool_schema['function']['name'] = tool.name
-                elif hasattr(tool, '__name__'):
+                if hasattr(tool, '__name__'):
                     tool_schema['function']['name'] = tool.__name__
                 elif hasattr(tool, '__class__') and hasattr(tool.__class__, '__name__'):
                     tool_schema['function']['name'] = tool.__class__.__name__

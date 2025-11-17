@@ -14,3 +14,4 @@ class DialogueStage(str, Enum):
     CANCELLATION_REQUEST = "cancellation_request"  # Запрос на отмену записи
     RESCHEDULE = "reschedule"                 # Перенос записи
     VIEW_MY_BOOKING = "view_my_booking"        # Просмотр своих записей
+    TOOL_TESTER = "tool_tester"               # Тестирование инструментов

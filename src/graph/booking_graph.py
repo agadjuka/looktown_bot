@@ -11,8 +11,8 @@ from ..agents.cancel_booking_agent import CancelBookingAgent
 from ..agents.reschedule_agent import RescheduleAgent
 from ..agents.greeting_agent import GreetingAgent
 from ..agents.information_gathering_agent import InformationGatheringAgent
-
 from ..agents.view_my_booking_agent import ViewMyBookingAgent
+from ..agents.tool_tester_agent import ToolTesterAgent
 
 
 
@@ -49,6 +49,7 @@ class BookingGraph:
                 'cancellation_request': CancelBookingAgent(langgraph_service),
                 'reschedule': RescheduleAgent(langgraph_service),
                 'view_my_booking': ViewMyBookingAgent(langgraph_service),
+                'tool_tester': ToolTesterAgent(langgraph_service),
             }
         
         # Используем агентов из кэша
@@ -61,6 +62,7 @@ class BookingGraph:
         self.cancel_agent = agents['cancellation_request']
         self.reschedule_agent = agents['reschedule']
         self.view_my_booking_agent = agents['view_my_booking']
+        self.tool_tester_agent = agents['tool_tester']
         
         # Создаём граф
         self.graph = self._create_graph()
@@ -79,6 +81,7 @@ class BookingGraph:
         graph.add_node("handle_cancellation_request", self._handle_cancellation_request)
         graph.add_node("handle_reschedule", self._handle_reschedule)
         graph.add_node("handle_view_my_booking", self._handle_view_my_booking)
+        graph.add_node("handle_tool_tester", self._handle_tool_tester)
         # Добавляем рёбра
         graph.add_edge(START, "detect_stage")
         graph.add_conditional_edges(
@@ -92,6 +95,7 @@ class BookingGraph:
                 "cancellation_request": "handle_cancellation_request",
                 "reschedule": "handle_reschedule",
                 "view_my_booking": "handle_view_my_booking",
+                "tool_tester": "handle_tool_tester",
                 "end": END
             }
         )
@@ -102,6 +106,7 @@ class BookingGraph:
         graph.add_edge("handle_cancellation_request", END)
         graph.add_edge("handle_reschedule", END)
         graph.add_edge("handle_view_my_booking", END)
+        graph.add_edge("handle_tool_tester", END)
         return graph
     
     def _detect_stage(self, state: BookingState) -> BookingState:
@@ -138,7 +143,7 @@ class BookingGraph:
     
     def _route_after_detect(self, state: BookingState) -> Literal[
         "greeting", "information_gathering", "booking", "booking_to_master",
-        "cancellation_request", "reschedule", "view_my_booking", "end"
+        "cancellation_request", "reschedule", "view_my_booking", "tool_tester", "end"
     ]:
         """Маршрутизация после определения стадии"""
         # Если CallManager был вызван, завершаем граф
@@ -153,7 +158,7 @@ class BookingGraph:
         # Валидация стадии
         valid_stages = [
             "greeting", "information_gathering", "booking", "booking_to_master",
-            "cancellation_request", "reschedule", "view_my_booking"
+            "cancellation_request", "reschedule", "view_my_booking", "tool_tester"
         ]
         
         if stage not in valid_stages:
@@ -277,4 +282,15 @@ class BookingGraph:
         answer = self.view_my_booking_agent(message, thread)
         return self._process_agent_result(self.view_my_booking_agent, answer, state, "ViewMyBookingAgent")
     
-            
+    def _handle_tool_tester(self, state: BookingState) -> BookingState:
+        """Обработка тестирования инструментов"""
+        logger.info("Обработка тестирования инструментов")
+        self._prepare_thread_for_agent(state)
+        message = state["message"]
+        thread = state["thread"]
+        
+        # Пробрасываем исключения дальше (не обрабатываем здесь)
+        answer = self.tool_tester_agent(message, thread)
+        return self._process_agent_result(self.tool_tester_agent, answer, state, "ToolTesterAgent")
+    
+             
