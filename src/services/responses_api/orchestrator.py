@@ -124,6 +124,10 @@ class ResponsesOrchestrator:
                     logger.error(f"Ошибка парсинга аргументов для {func_name}: {args_json}")
                     args = {}
                 
+                # Логируем использование инструмента
+                logger.info(f"🔧 Использован инструмент: {func_name}")
+                logger.info(f"📋 Аргументы: {json.dumps(args, ensure_ascii=False, indent=2)}")
+                
                 # Вызываем инструмент
                 try:
                     result = self.tools_registry.call_tool(func_name, args, conversation_history=conversation_history)

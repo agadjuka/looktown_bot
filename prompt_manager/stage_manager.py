@@ -261,22 +261,31 @@ class StageManager:
             return {'success': False, 'error': f'Файл {file_name} уже существует'}
         
         # Создаём содержимое файла
-        tools_imports = []
-        tools_list = []
-        
-        # Используем динамический список инструментов
+        # Определяем модуль для каждого инструмента
+        tool_module_mapping = self._get_tool_module_mapping()
         available_tools = self.get_available_tools()
+        
+        # Группируем инструменты по модулям
+        tools_by_module = {}
         for tool_name in tools:
             if tool_name in available_tools:
-                tools_imports.append(tool_name)
-                tools_list.append(tool_name)
+                module = tool_module_mapping.get(tool_name, 'service_tools')
+                if module not in tools_by_module:
+                    tools_by_module[module] = []
+                tools_by_module[module].append(tool_name)
         
+        # Формируем импорты
         imports = ""
+        tools_list = []
+        for module, module_tools in sorted(tools_by_module.items()):
+            if module_tools:
+                imports += f"from .tools.{module} import {', '.join(sorted(module_tools))}\n"
+                tools_list.extend(module_tools)
+        
         tools_param = "None"
-        if tools_imports:
-            imports = f"from .tools.service_tools import {', '.join(tools_imports)}\n"
+        if tools_list:
             # Формируем список инструментов с кавычками
-            quoted_tools = ['"' + tool + '"' for tool in tools_list]
+            quoted_tools = ['"' + tool + '"' for tool in sorted(tools_list)]
             tools_param = f"[{', '.join(quoted_tools)}]"
         
         # Экранируем тройные кавычки в instruction, заменяя их на тройные одинарные
@@ -680,32 +689,51 @@ class {class_name}(BaseAgent):
             return False
     
     def _get_tool_module_mapping(self) -> Dict[str, str]:
-        """Определяет модуль для каждого инструмента"""
-        tool_classes = self.load_tool_classes()
+        """Определяет модуль для каждого инструмента через парсинг файлов"""
         module_mapping = {}
+        tools_dir = self.project_root / "src" / "agents" / "tools"
         
-        for tool_name, tool_class in tool_classes.items():
-            # Получаем модуль класса
-            module_name = tool_class.__module__
-            # Извлекаем имя модуля (последняя часть после точки)
-            if '.' in module_name:
-                module_parts = module_name.split('.')
-                # Ищем часть, которая начинается с 'tools'
-                tools_idx = None
-                for i, part in enumerate(module_parts):
-                    if part == 'tools':
-                        tools_idx = i
-                        break
+        if not tools_dir.exists():
+            return {}
+        
+        # Проходим по всем файлам в директории tools
+        for file_path in tools_dir.iterdir():
+            if not file_path.is_file() or file_path.name.startswith('__') or file_path.suffix != '.py':
+                continue
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
                 
-                if tools_idx is not None and tools_idx + 1 < len(module_parts):
-                    # Берем имя модуля после 'tools'
-                    module_file = module_parts[tools_idx + 1]
-                    module_mapping[tool_name] = module_file
-                else:
-                    # По умолчанию service_tools
-                    module_mapping[tool_name] = 'service_tools'
-            else:
-                module_mapping[tool_name] = 'service_tools'
+                # Ищем классы инструментов в этом файле
+                class_pattern = r'class\s+(\w+)\s*\([^)]*BaseModel[^)]*\):'
+                class_matches = list(re.finditer(class_pattern, content))
+                
+                # Имя модуля - это имя файла без расширения
+                module_name = file_path.stem
+                
+                for match in class_matches:
+                    class_name = match.group(1)
+                    class_start = match.end()
+                    
+                    # Ищем конец класса (следующий class или конец файла)
+                    next_class_match = re.search(r'\nclass\s+\w+', content[class_start:])
+                    if next_class_match:
+                        class_end = class_start + next_class_match.start()
+                    else:
+                        class_end = len(content)
+                    
+                    # Извлекаем содержимое класса
+                    class_content = content[class_start:class_end]
+                    
+                    # Проверяем, что у класса есть метод process
+                    if 'def process' in class_content:
+                        module_mapping[class_name] = module_name
+                        
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Не удалось прочитать файл {file_path.name}: {e}")
         
         return module_mapping
     
@@ -943,43 +971,58 @@ class {class_name}(BaseAgent):
             return False
     
     def load_tool_classes(self) -> Dict[str, type]:
-        """Динамически загрузить все классы инструментов из всех модулей в пакете tools"""
-        try:
-            import importlib
-            import pkgutil
-            from src.agents import tools as tools_package
-            
-            tool_classes = {}
-            
-            # Проходим по всем модулям в пакете tools
-            for importer, modname, ispkg in pkgutil.iter_modules(tools_package.__path__, tools_package.__name__ + "."):
-                if not ispkg:  # Пропускаем подпакеты, только модули
-                    try:
-                        module = importlib.import_module(modname)
-                        # Проходим по всем атрибутам модуля
-                        for name, obj in inspect.getmembers(module):
-                            # Проверяем, что это класс, наследуется от BaseModel и имеет метод process
-                            if (inspect.isclass(obj) and 
-                                issubclass(obj, BaseModel) and 
-                                obj != BaseModel and
-                                hasattr(obj, 'process') and
-                                callable(getattr(obj, 'process'))):
-                                tool_classes[name] = obj
-                    except Exception as e:
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.warning(f"Не удалось загрузить модуль {modname}: {e}")
-            
-            return tool_classes
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Ошибка при загрузке инструментов: {e}", exc_info=True)
-            # Возвращаем пустой словарь в случае ошибки
+        """
+        Получить список классов инструментов через парсинг файлов (без импорта)
+        Возвращает словарь с именами инструментов, но без самих классов
+        """
+        tool_names = {}
+        tools_dir = self.project_root / "src" / "agents" / "tools"
+        
+        if not tools_dir.exists():
             return {}
+        
+        # Проходим по всем файлам в директории tools
+        for file_path in tools_dir.iterdir():
+            # Пропускаем __init__.py и другие служебные файлы
+            if not file_path.is_file() or file_path.name.startswith('__') or file_path.suffix != '.py':
+                continue
+            
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Ищем классы, которые наследуются от BaseModel
+                # Паттерн: class ИмяКласса(BaseModel): ... def process(
+                class_pattern = r'class\s+(\w+)\s*\([^)]*BaseModel[^)]*\):'
+                class_matches = list(re.finditer(class_pattern, content))
+                
+                for match in class_matches:
+                    class_name = match.group(1)
+                    class_start = match.end()
+                    
+                    # Ищем конец класса (следующий class или конец файла)
+                    next_class_match = re.search(r'\nclass\s+\w+', content[class_start:])
+                    if next_class_match:
+                        class_end = class_start + next_class_match.start()
+                    else:
+                        class_end = len(content)
+                    
+                    # Извлекаем содержимое класса
+                    class_content = content[class_start:class_end]
+                    
+                    # Проверяем, что у класса есть метод process
+                    if 'def process' in class_content:
+                        tool_names[class_name] = None  # Храним только имя, без класса
+                        
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Не удалось прочитать файл {file_path.name}: {e}")
+        
+        return tool_names
     
     def get_available_tools(self) -> List[str]:
-        """Получить список доступных инструментов (динамически)"""
+        """Получить список доступных инструментов (через парсинг файлов)"""
         tool_classes = self.load_tool_classes()
         return sorted(tool_classes.keys())
     

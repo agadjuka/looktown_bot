@@ -25,7 +25,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from prompt_manager.stage_manager import StageManager
-from src.ydb_client import get_ydb_client
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -41,20 +40,7 @@ st.set_page_config(
 # Инициализация
 if 'stage_manager' not in st.session_state:
     st.session_state.stage_manager = StageManager()
-    st.session_state.langgraph_service = None
-    st.session_state.ydb_client = None
     st.session_state.current_view = None  # 'detector' или индекс стадии
-
-# Инициализация сервисов
-try:
-    from src.services.langgraph_service import LangGraphService
-    if os.getenv("YANDEX_FOLDER_ID") and os.getenv("YANDEX_API_KEY_SECRET"):
-        st.session_state.langgraph_service = LangGraphService()
-        st.session_state.ydb_client = get_ydb_client()
-except Exception as e:
-    logger.warning(f"Не удалось инициализировать сервисы: {e}")
-    st.session_state.langgraph_service = None
-    st.session_state.ydb_client = None
 
 # Боковая панель - навигация
 with st.sidebar:
@@ -126,24 +112,7 @@ if st.session_state.get('current_view') == 'detector':
             if detector_template != current_detector_instruction:
                 result = st.session_state.stage_manager.save_stage_detector_instruction(detector_template)
                 if result:
-                    st.success("✅ Промпт сохранён!")
-                    
-                    # Обновляем в Yandex Cloud
-                    if st.session_state.langgraph_service and st.session_state.ydb_client:
-                        try:
-                            logger.info("Обновление определителя стадий в Yandex Cloud...")
-                            detector_id = st.session_state.ydb_client.get_assistant_id("Определитель стадий диалога")
-                            
-                            if detector_id:
-                                assistant = st.session_state.langgraph_service.sdk.assistants.get(detector_id)
-                                assistant.update(instruction=detector_template)
-                                st.success("✅ Обновлён в Yandex Cloud!")
-                            else:
-                                st.warning("⚠️ Assistant ID не найден в YDB")
-                        except Exception as e:
-                            logger.error(f"Ошибка обновления в Yandex Cloud: {e}")
-                            st.error(f"❌ Ошибка обновления в Yandex Cloud: {e}")
-                    
+                    st.success("✅ Изменения относили")
                     st.rerun()
                 else:
                     st.error("❌ Ошибка сохранения")
@@ -161,7 +130,20 @@ if st.session_state.get('current_view') == 'detector':
     st.markdown("*Можно редактировать описания отдельных стадий, они будут обновлены в промпте*")
     
     try:
-        from src.agents.dialogue_stages import DialogueStage
+        # Парсим файл dialogue_stages.py напрямую, без импорта
+        dialogue_stages_file = st.session_state.stage_manager.dialogue_stages_file
+        stage_keys = []
+        
+        if dialogue_stages_file.exists():
+            with open(dialogue_stages_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # Ищем все значения стадий в формате: STAGE_NAME = "stage_key"
+            import re
+            pattern = r'\s+(\w+)\s*=\s*"([^"]+)"'
+            matches = re.findall(pattern, content)
+            for enum_name, stage_key in matches:
+                stage_keys.append(stage_key)
         
         # Извлекаем описания из текущего промпта
         descriptions = {}
@@ -174,8 +156,11 @@ if st.session_state.get('current_view') == 'detector':
                         description = parts[1].strip()
                         descriptions[stage_key] = description
         
-        for stage in DialogueStage:
-            stage_key = stage.value
+        # Если не нашли стадии в файле, используем те, что есть в описаниях
+        if not stage_keys:
+            stage_keys = list(descriptions.keys())
+        
+        for stage_key in sorted(set(stage_keys)):
             current_desc = descriptions.get(stage_key, "")
             
             with st.expander(f"📝 {stage_key}", expanded=False):
@@ -192,21 +177,7 @@ if st.session_state.get('current_view') == 'detector':
                         # Обновляем описание в промпте
                         result = st.session_state.stage_manager.add_stage_to_detector(stage_key, stage_key, new_desc)
                         if result:
-                            st.success("✅ Описание сохранено!")
-                            
-                            # Обновляем в Yandex Cloud
-                            if st.session_state.langgraph_service and st.session_state.ydb_client:
-                                try:
-                                    updated_instruction = st.session_state.stage_manager.get_stage_detector_instruction()
-                                    detector_id = st.session_state.ydb_client.get_assistant_id("Определитель стадий диалога")
-                                    
-                                    if detector_id:
-                                        assistant = st.session_state.langgraph_service.sdk.assistants.get(detector_id)
-                                        assistant.update(instruction=updated_instruction)
-                                        st.success("✅ Обновлён в Yandex Cloud!")
-                                except Exception as e:
-                                    logger.error(f"Ошибка обновления в Yandex Cloud: {e}")
-                            
+                            st.success("✅ Изменения относили")
                             st.rerun()
                         else:
                             st.error("❌ Ошибка сохранения описания")
@@ -269,92 +240,6 @@ elif st.session_state.get('current_view') == 'create' or st.session_state.get('s
                     else:
                         st.error("❌ Не удалось добавить в определитель")
                     
-                    # Создаём Assistant в Yandex Cloud
-                    st.info("🔧 Создание Assistant в Yandex Cloud...")
-                    assistant_created = False
-                    assistant_id = None
-                    
-                    try:
-                        from src.services.langgraph_service import LangGraphService
-                        
-                        logger.info("=== СОЗДАНИЕ ASSISTANT В YANDEX CLOUD ===")
-                        logger.info(f"stage_name: {stage_name}")
-                        logger.info(f"instruction длина: {len(instruction)}")
-                        logger.info(f"selected_tools: {selected_tools}")
-                        
-                        langgraph_service = LangGraphService()
-                        logger.info("LangGraphService создан")
-                        
-                        tool_list = []
-                        if selected_tools:
-                            logger.info(f"Обработка инструментов: {selected_tools}")
-                            # Динамически загружаем классы инструментов
-                            tool_classes_dict = st.session_state.stage_manager.load_tool_classes()
-                            tools_classes = [tool_classes_dict[t] for t in selected_tools if t in tool_classes_dict]
-                            logger.info(f"Классы инструментов: {[t.__name__ for t in tools_classes]}")
-                            tool_list = [langgraph_service.sdk.tools.function(t) for t in tools_classes]
-                            logger.info(f"Инструменты созданы: {len(tool_list)}")
-                        
-                        logger.info("Вызов create_assistant...")
-                        assistant = langgraph_service.create_assistant(
-                            instruction=instruction,
-                            tools=tool_list,
-                            name=stage_name
-                        )
-                        assistant_id = assistant.id
-                        assistant_created = True
-                        logger.info(f"✅ Assistant создан: ID={assistant_id}, name={stage_name}")
-                        
-                        st.success(f"✅ Assistant создан (ID: {assistant_id})")
-                        
-                        # Проверяем сохранение в YDB
-                        logger.info("Проверка сохранения в YDB...")
-                        from src.ydb_client import get_ydb_client
-                        ydb_client = get_ydb_client()
-                        saved_id = ydb_client.get_assistant_id(stage_name)
-                        if saved_id == assistant_id:
-                            logger.info(f"✅ ID сохранён в YDB: {saved_id}")
-                            st.success("✅ Запись добавлена в YDB")
-                        else:
-                            logger.warning(f"⚠️ ID не совпадает или не сохранён. Ожидалось: {assistant_id}, получено: {saved_id}")
-                            st.warning("⚠️ Проблема с сохранением в YDB")
-                        
-                        # Обновляем определитель в Yandex Cloud
-                        logger.info("Обновление определителя стадий...")
-                        updated_instruction = st.session_state.stage_manager.get_stage_detector_instruction()
-                        logger.info(f"Длина обновлённой инструкции: {len(updated_instruction)}")
-                        
-                        # Используем langgraph_service из session_state или созданный
-                        service_to_use = st.session_state.langgraph_service or langgraph_service
-                        if service_to_use and st.session_state.ydb_client:
-                            try:
-                                # Получаем Assistant ID из YDB
-                                detector_id = st.session_state.ydb_client.get_assistant_id("Определитель стадий диалога")
-                                
-                                if detector_id:
-                                    logger.info(f"Найден определитель стадий в YDB: {detector_id}")
-                                    assistant = service_to_use.sdk.assistants.get(detector_id)
-                                    assistant.update(instruction=updated_instruction)
-                                    logger.info("✅ Определитель стадий обновлён")
-                                    st.success("✅ Определитель стадий обновлён в Yandex Cloud")
-                                else:
-                                    logger.warning("⚠️ Определитель стадий не найден в YDB")
-                                    st.warning("⚠️ Определитель стадий будет обновлён при следующем запуске")
-                            except Exception as e:
-                                logger.error(f"❌ Ошибка обновления определителя стадий: {e}", exc_info=True)
-                                st.warning(f"⚠️ Не удалось обновить определитель стадий: {e}")
-                        else:
-                            logger.error("❌ LangGraphService или YDB недоступны для обновления определителя")
-                            st.warning("⚠️ Не удалось обновить определитель стадий (сервис недоступен)")
-                            
-                    except Exception as e:
-                        import traceback
-                        error_details = traceback.format_exc()
-                        logger.error(f"❌ ОШИБКА при создании Assistant: {e}")
-                        logger.error(f"Детали ошибки:\n{error_details}")
-                        st.error(f"❌ Ошибка создания Assistant: {e}")
-                        st.code(error_details, language='python')
-                    
                     if result.get('graph_added'):
                         st.success("✅ Стадия добавлена в граф")
                     else:
@@ -365,10 +250,7 @@ elif st.session_state.get('current_view') == 'create' or st.session_state.get('s
                     else:
                         st.error("❌ Не удалось добавить в dialogue_stages.py. Проверьте консоль для деталей.")
                     
-                    if assistant_created:
-                        st.success(f"✅ Стадия '{stage_name}' полностью создана!")
-                    else:
-                        st.warning(f"⚠️ Стадия '{stage_name}' создана частично. Проверьте логи.")
+                    st.success(f"✅ Стадия '{stage_name}' создана!")
                     
                     st.session_state.current_view = None
                     st.session_state.show_create_form = False
@@ -396,50 +278,6 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                 result = st.session_state.stage_manager.delete_stage(stage['file_path'])
                 
                 if result['success']:
-                    # Получаем ID из YDB
-                    assistant_id = None
-                    if st.session_state.ydb_client:
-                        try:
-                            query = "SELECT assistant_id FROM assistants WHERE assistant_name = $name"
-                            db_result = st.session_state.ydb_client._execute_query(query, {"$name": stage['name']})
-                            if db_result and db_result[0].rows:
-                                assistant_id = db_result[0].rows[0].assistant_id.decode()
-                        except Exception:
-                            pass
-                    
-                    # Удаляем из Yandex Cloud
-                    if st.session_state.langgraph_service and assistant_id:
-                        try:
-                            assistant = st.session_state.langgraph_service.assistants.get(assistant_id)
-                            assistant.delete()
-                            st.success("✅ Удалён из Yandex Cloud")
-                        except Exception:
-                            # Пробуем по имени
-                            try:
-                                assistants = list(st.session_state.langgraph_service.assistants.list())
-                                for assistant in assistants:
-                                    try:
-                                        if hasattr(assistant, 'name') and assistant.name == stage['name']:
-                                            assistant.delete()
-                                            st.success("✅ Удалён из Yandex Cloud")
-                                            break
-                                    except Exception:
-                                        continue
-                            except Exception:
-                                pass
-                    
-                    # Удаляем из YDB
-                    if st.session_state.ydb_client:
-                        try:
-                            delete_query = """
-                            DECLARE $name AS String;
-                            DELETE FROM assistants WHERE assistant_name = $name;
-                            """
-                            st.session_state.ydb_client._execute_query(delete_query, {"$name": stage['name']})
-                            st.success("✅ Удалён из YDB")
-                        except Exception as e:
-                            st.warning(f"⚠️ Ошибка удаления из YDB: {e}")
-                    
                     # Удаляем из определителя
                     if result.get('stage_info'):
                         stage_info = result['stage_info']
@@ -449,19 +287,6 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                             stage_key=stage_key_from_file,
                             stage_name=stage_info.get('name', '')
                         )
-                        
-                        # Обновляем определитель в Yandex Cloud
-                        if st.session_state.langgraph_service and st.session_state.ydb_client:
-                            try:
-                                updated_instruction = st.session_state.stage_manager.get_stage_detector_instruction()
-                                detector_id = st.session_state.ydb_client.get_assistant_id("Определитель стадий диалога")
-                                
-                                if detector_id:
-                                    assistant = st.session_state.langgraph_service.sdk.assistants.get(detector_id)
-                                    assistant.update(instruction=updated_instruction)
-                                    logger.info("✅ Определитель стадий обновлён после удаления стадии")
-                            except Exception as e:
-                                logger.warning(f"⚠️ Ошибка обновления определителя после удаления: {e}")
                     
                     # Удаляем из графа и dialogue_stages
                     if result.get('stage_info'):
@@ -479,7 +304,7 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                         if not graph_result or not result.get('stages_removed'):
                             st.warning("⚠️ Не удалось удалить из некоторых файлов автоматически")
                     
-                    st.success("Стадия удалена!")
+                    st.success("✅ Изменения относили")
                     st.session_state.current_view = None
                     st.session_state.show_delete_confirm = False
                     st.rerun()
@@ -577,21 +402,8 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                             new_stage_desc
                         )
                         if result:
-                            st.success("✅ Описание стадии сохранено!")
+                            st.success("✅ Изменения относили")
                             changes_made = True
-                            
-                            # Обновляем определитель в Yandex Cloud
-                            if st.session_state.langgraph_service and st.session_state.ydb_client:
-                                try:
-                                    updated_instruction = st.session_state.stage_manager.get_stage_detector_instruction()
-                                    detector_id = st.session_state.ydb_client.get_assistant_id("Определитель стадий диалога")
-                                    
-                                    if detector_id:
-                                        assistant = st.session_state.langgraph_service.sdk.assistants.get(detector_id)
-                                        assistant.update(instruction=updated_instruction)
-                                        logger.info("✅ Определитель стадий обновлён после изменения описания")
-                                except Exception as e:
-                                    logger.warning(f"⚠️ Ошибка обновления определителя: {e}")
                         else:
                             st.error("❌ Ошибка сохранения описания")
                     except Exception as e:
@@ -605,63 +417,8 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                         selected_tools
                     )
                     if tools_result:
-                        st.success("✅ Инструменты обновлены!")
+                        st.success("✅ Изменения относили")
                         changes_made = True
-                        
-                        # Обновляем Assistant в Yandex Cloud с новыми инструментами
-                        if st.session_state.langgraph_service and st.session_state.ydb_client:
-                            try:
-                                logger.info(f"Обновление инструментов для агента '{stage['name']}' в Yandex Cloud...")
-                                
-                                # Получаем Assistant ID из YDB
-                                assistant_id = st.session_state.ydb_client.get_assistant_id(stage['name'])
-                                
-                                if assistant_id:
-                                    logger.info(f"Найден Assistant ID в YDB: {assistant_id}")
-                                    
-                                    # Подготавливаем новые инструменты (динамически)
-                                    tool_list = []
-                                    if selected_tools:
-                                        # Динамически загружаем классы инструментов
-                                        tool_classes_dict = st.session_state.stage_manager.load_tool_classes()
-                                        tools_classes = [tool_classes_dict[t] for t in selected_tools if t in tool_classes_dict]
-                                        tool_list = [st.session_state.langgraph_service.sdk.tools.function(t) for t in tools_classes]
-                                    
-                                    # Получаем текущую инструкцию
-                                    current_assistant = st.session_state.langgraph_service.sdk.assistants.get(assistant_id)
-                                    current_instruction = getattr(current_assistant, 'instruction', None) or new_instruction or stage['instruction']
-                                    
-                                    # Удаляем старый Assistant и создаём новый с новыми инструментами
-                                    try:
-                                        current_assistant.delete()
-                                        logger.info("Старый Assistant удалён")
-                                    except Exception as e:
-                                        logger.warning(f"Не удалось удалить старый Assistant: {e}")
-                                    
-                                    # Создаём новый Assistant с обновлёнными инструментами
-                                    new_assistant = st.session_state.langgraph_service.create_assistant(
-                                        instruction=current_instruction,
-                                        tools=tool_list if tool_list else None,
-                                        name=stage['name']
-                                    )
-                                    
-                                    logger.info(f"✅ Assistant пересоздан с новыми инструментами: ID={new_assistant.id}")
-                                    st.success("✅ Инструменты обновлены в Yandex Cloud")
-                                else:
-                                    logger.warning(f"⚠️ Assistant ID не найден в YDB для '{stage['name']}'")
-                                    st.warning("⚠️ Assistant ID не найден в YDB. Инструменты будут обновлены при следующем запуске.")
-                                    
-                            except Exception as e:
-                                import traceback
-                                error_details = traceback.format_exc()
-                                logger.error(f"❌ Ошибка обновления инструментов в Yandex Cloud: {e}")
-                                logger.error(f"Детали: {error_details}")
-                                st.error(f"❌ Ошибка обновления инструментов в Yandex Cloud: {e}")
-                        else:
-                            if not st.session_state.langgraph_service:
-                                st.warning("⚠️ LangGraphService недоступен. Инструменты сохранены только в файл.")
-                            if not st.session_state.ydb_client:
-                                st.warning("⚠️ YDB клиент недоступен. Инструменты сохранены только в файл.")
                     else:
                         st.error("❌ Ошибка обновления инструментов")
                 
@@ -672,40 +429,8 @@ elif isinstance(st.session_state.get('current_view'), int) and 0 <= st.session_s
                         new_instruction
                     )
                     if result:
-                        st.success("✅ Промпт сохранён!")
+                        st.success("✅ Изменения относили")
                         changes_made = True
-                        
-                        # Обновляем в Yandex Cloud через правильный способ
-                        if st.session_state.langgraph_service and st.session_state.ydb_client:
-                            try:
-                                logger.info(f"Обновление промпта для агента '{stage['name']}' в Yandex Cloud...")
-                                
-                                # Получаем Assistant ID из YDB
-                                assistant_id = st.session_state.ydb_client.get_assistant_id(stage['name'])
-                                
-                                if assistant_id:
-                                    logger.info(f"Найден Assistant ID в YDB: {assistant_id}")
-                                    # Получаем Assistant по ID
-                                    assistant = st.session_state.langgraph_service.sdk.assistants.get(assistant_id)
-                                    # Обновляем инструкцию
-                                    assistant.update(instruction=new_instruction)
-                                    logger.info(f"✅ Промпт обновлён в Yandex Cloud для агента '{stage['name']}'")
-                                    st.success("✅ Обновлён в Yandex Cloud")
-                                else:
-                                    logger.warning(f"⚠️ Assistant ID не найден в YDB для '{stage['name']}'")
-                                    st.warning("⚠️ Assistant ID не найден в YDB. Агент будет обновлён при следующем запуске.")
-                                    
-                            except Exception as e:
-                                import traceback
-                                error_details = traceback.format_exc()
-                                logger.error(f"❌ Ошибка обновления промпта в Yandex Cloud: {e}")
-                                logger.error(f"Детали: {error_details}")
-                                st.error(f"❌ Ошибка обновления в Yandex Cloud: {e}")
-                        else:
-                            if not st.session_state.langgraph_service:
-                                st.warning("⚠️ LangGraphService недоступен. Промпт сохранён только в файл.")
-                            if not st.session_state.ydb_client:
-                                st.warning("⚠️ YDB клиент недоступен. Промпт сохранён только в файл.")
                     else:
                         st.error("❌ Ошибка сохранения промпта")
                 

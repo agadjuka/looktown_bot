@@ -71,13 +71,6 @@ class ResponsesAPIClient:
             
             result = response.json()
             
-            # ЛОГИРУЕМ СЫРОЙ JSON ОТВЕТ
-            logger.info("=" * 80)
-            logger.info("СЫРОЙ JSON ОТВЕТ ОТ API:")
-            logger.info(f"Полный JSON: {result}")
-            logger.info(f"Ключи в JSON: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
-            logger.info("=" * 80)
-            
             # Создаём объект-обёртку для совместимости с кодом
             class ResponseWrapper:
                 def __init__(self, data):
