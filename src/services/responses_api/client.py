@@ -90,17 +90,27 @@ class ResponsesAPIClient:
                     # Извлекаем текст из output[0]['content'][0]['text']
                     output_text = ""
                     if self.output and isinstance(self.output, list) and len(self.output) > 0:
+                        # Логируем структуру output для диагностики
+                        logger.debug(f"Структура output: {json.dumps(self.output, ensure_ascii=False, indent=2)}")
+                        
                         first_output = self.output[0]
                         if isinstance(first_output, dict):
                             content = first_output.get("content", [])
                             if isinstance(content, list) and len(content) > 0:
-                                first_content = content[0]
-                                if isinstance(first_content, dict):
-                                    # Ищем элемент с type='output_text'
-                                    for item in content:
-                                        if isinstance(item, dict) and item.get("type") == "output_text":
+                                # Ищем элемент с type='output_text'
+                                for item in content:
+                                    if isinstance(item, dict):
+                                        item_type = item.get("type")
+                                        if item_type == "output_text":
                                             output_text = item.get("text", "")
+                                            logger.debug(f"Найден output_text: {output_text[:100]}...")
                                             break
+                                        else:
+                                            logger.debug(f"Пропущен элемент с type={item_type}")
+                    
+                    if not output_text:
+                        logger.warning("output_text не найден в ответе API")
+                        logger.debug(f"Полная структура output: {json.dumps(self.output, ensure_ascii=False, indent=2)}")
                     
                     self.output_text = output_text
             

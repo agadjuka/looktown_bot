@@ -23,7 +23,7 @@ class CallManagerService:
         error_message: str,
         agent_name: str,
         message: str,
-        thread_id: str = None
+        chat_id: str = None
     ) -> dict:
         """
         Обработка критических ошибок через CallManager
@@ -31,14 +31,14 @@ class CallManagerService:
         :param error_message: Сообщение об ошибке
         :param agent_name: Имя агента, в котором произошла ошибка
         :param message: Исходное сообщение пользователя
-        :param thread_id: ID потока (опционально)
+        :param chat_id: ID чата (опционально)
         :return: Результат эскалации с полями user_message и manager_alert
         """
         logger.error(f"CallManager вызван для агента {agent_name}")
         logger.error(f"Ошибка: {error_message}")
         logger.error(f"Исходное сообщение: {message[:200]}")
-        if thread_id:
-            logger.error(f"Thread ID: {thread_id}")
+        if chat_id:
+            logger.error(f"Chat ID: {chat_id}")
         
         # Формируем отчет для менеджера
         manager_report = f"Отчет для менеджера:\n"
@@ -52,7 +52,7 @@ class CallManagerService:
         call_manager_text = f"[CALL_MANAGER]\n{manager_report}"
         
         # Обрабатываем через EscalationService
-        escalation_result = escalation_service.handle(call_manager_text, str(thread_id) if thread_id else "unknown")
+        escalation_result = escalation_service.handle(call_manager_text, str(chat_id) if chat_id else "unknown")
         
         return escalation_result
 

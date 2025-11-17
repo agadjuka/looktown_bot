@@ -8,6 +8,12 @@ from .tools_registry import ResponsesToolsRegistry
 from .config import ResponsesAPIConfig
 from ..logger_service import logger
 
+# Импортируем CallManagerException один раз, а не в цикле
+try:
+    from ...agents.tools.call_manager_tools import CallManagerException
+except ImportError:
+    CallManagerException = None
+
 
 class ResponsesOrchestrator:
     """Orchestrator для обработки диалогов через Responses API"""
@@ -61,134 +67,101 @@ class ResponsesOrchestrator:
             "content": user_message
         })
         
-        # Получаем схемы инструментов
+        # Получаем схемы инструментов один раз (не меняются в процессе выполнения)
         tools_schemas = self.tools_registry.get_all_tools_schemas()
         
-        # Первый запрос к модели
-        response = self.client.create_response(
-            instructions=self.instructions,
-            input_messages=conversation_history,
-            tools=tools_schemas if tools_schemas else None,
-        )
-        
-        # ЛОГИРУЕМ ПОЛНЫЙ ОТВЕТ ДЛЯ ДИАГНОСТИКИ
-        logger.info("=" * 80)
-        logger.info("ПОЛНЫЙ ОТВЕТ ОТ RESPONSES API:")
-        logger.info(f"Тип response: {type(response)}")
-        logger.info(f"Атрибуты response: {dir(response)}")
-        if hasattr(response, "_data"):
-            logger.info(f"response._data: {response._data}")
-        if hasattr(response, "output_text"):
-            logger.info(f"response.output_text: {repr(response.output_text)}")
-        if hasattr(response, "output"):
-            logger.info(f"response.output: {repr(response.output)}")
-            logger.info(f"Тип response.output: {type(response.output)}")
-        logger.info("=" * 80)
-        
-        # Проверяем, есть ли готовый текст ответа
-        if hasattr(response, "output_text") and response.output_text:
-            return {
-                "reply": response.output_text,
-                "conversation_history": conversation_history,
-                "tool_calls": [],
-            }
-        
-        # Обрабатываем tool_calls
-        tool_calls = self._extract_tool_calls(response)
-        
-        if not tool_calls:
-            # Если нет tool_calls, но и нет output_text, возвращаем пустой ответ
-            return {
-                "reply": "",
-                "conversation_history": conversation_history,
-                "tool_calls": [],
-            }
-        
-        # Выполняем инструменты
-        tool_outputs = []
+        # Цикл для обработки множественных вызовов инструментов
+        # API может вызывать инструменты несколько раз подряд
+        max_iterations = 10  # Максимальное количество итераций для предотвращения бесконечного цикла
+        iteration = 0
         tool_calls_info = []
+        reply_text = ""
         
-        for call in tool_calls:
-            func_name = call.get("name")
-            call_id = call.get("call_id", "")
-            args_json = call.get("arguments", "{}")
+        while iteration < max_iterations:
+            iteration += 1
+            logger.debug(f"Итерация {iteration}: Запрос к API (сообщений в истории: {len(conversation_history)})")
             
+            # Запрос к модели
             try:
-                args = json.loads(args_json) if isinstance(args_json, str) else args_json
-            except json.JSONDecodeError:
-                logger.error(f"Ошибка парсинга аргументов для {func_name}: {args_json}")
-                args = {}
-            
-            # Вызываем инструмент
-            try:
-                result = self.tools_registry.call_tool(func_name, args)
-                
-                # Сохраняем информацию о вызове
-                tool_calls_info.append({
-                    "name": func_name,
-                    "args": args,
-                    "result": result,
-                })
-                
-                # Добавляем function_call в историю
-                conversation_history.append({
-                    "type": "function_call",
-                    "call_id": call_id,
-                    "name": func_name,
-                    "arguments": args_json if isinstance(args_json, str) else json.dumps(args_json),
-                })
-                
-                # Добавляем результат в историю
-                tool_output = {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result,
-                }
-                tool_outputs.append(tool_output)
-                conversation_history.append(tool_output)
-                
+                response = self.client.create_response(
+                    instructions=self.instructions,
+                    input_messages=conversation_history,
+                    tools=tools_schemas if tools_schemas else None,
+                )
             except Exception as e:
-                # Проверяем, не является ли это CallManagerException
-                from ...agents.tools.call_manager_tools import CallManagerException
-                if isinstance(e, CallManagerException):
-                    # CallManager был вызван - возвращаем специальный результат
-                    escalation_result = e.escalation_result
-                    logger.info(f"CallManager вызван через инструмент {func_name}")
+                logger.error(f"Ошибка при запросе к API на итерации {iteration}: {e}", exc_info=True)
+                # Если это критическая ошибка, прекращаем цикл
+                break
+            
+            # Логируем ответ только на уровне DEBUG (избыточно для INFO)
+            logger.debug(f"ОТВЕТ ОТ RESPONSES API (итерация {iteration}): output_text={bool(getattr(response, 'output_text', None))}, output_len={len(getattr(response, 'output', []))}")
+            
+            # Проверяем, есть ли готовый текст ответа
+            if hasattr(response, "output_text") and response.output_text:
+                reply_text = response.output_text
+                logger.info(f"Получен текстовый ответ на итерации {iteration} (длина: {len(reply_text)})")
+                break
+            
+            # Обрабатываем tool_calls
+            tool_calls = self._extract_tool_calls(response)
+            
+            if not tool_calls:
+                # Если нет tool_calls, но и нет output_text, прекращаем цикл
+                logger.warning(f"Нет tool_calls и нет output_text на итерации {iteration}")
+                break
+            
+            logger.debug(f"Найдено {len(tool_calls)} вызовов инструментов на итерации {iteration}")
+            
+            # Выполняем инструменты
+            for call in tool_calls:
+                func_name = call.get("name")
+                call_id = call.get("call_id", "")
+                args_json = call.get("arguments", "{}")
+                
+                try:
+                    args = json.loads(args_json) if isinstance(args_json, str) else args_json
+                except json.JSONDecodeError:
+                    logger.error(f"Ошибка парсинга аргументов для {func_name}: {args_json}")
+                    args = {}
+                
+                # Вызываем инструмент
+                try:
+                    result = self.tools_registry.call_tool(func_name, args)
+                    self._add_tool_call_to_history(
+                        conversation_history, tool_calls_info, 
+                        func_name, call_id, args_json, args, result
+                    )
                     
-                    return {
-                        "reply": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
-                        "conversation_history": conversation_history,
-                        "tool_calls": tool_calls_info,
-                        "call_manager": True,
-                        "manager_alert": escalation_result.get("manager_alert"),
-                    }
-                
-                logger.error(f"Ошибка при вызове инструмента {func_name}: {e}", exc_info=True)
-                error_result = f"Ошибка при выполнении инструмента: {str(e)}"
-                
-                tool_calls_info.append({
-                    "name": func_name,
-                    "args": args,
-                    "result": error_result,
-                })
-                
-                tool_output = {
-                    "type": "function_call_output",
-                    "call_id": call_id,
-                    "output": error_result,
-                }
-                tool_outputs.append(tool_output)
-                conversation_history.append(tool_output)
+                except Exception as e:
+                    # Проверяем, не является ли это CallManagerException
+                    if CallManagerException and isinstance(e, CallManagerException):
+                        # CallManager был вызван - возвращаем специальный результат
+                        escalation_result = e.escalation_result
+                        logger.info(f"CallManager вызван через инструмент {func_name}")
+                        
+                        return {
+                            "reply": escalation_result.get("user_message", "Секундочку, уточняю ваш вопрос у менеджера."),
+                            "conversation_history": conversation_history,
+                            "tool_calls": tool_calls_info,
+                            "call_manager": True,
+                            "manager_alert": escalation_result.get("manager_alert"),
+                        }
+                    
+                    # Обрабатываем ошибку инструмента
+                    logger.error(f"Ошибка при вызове инструмента {func_name}: {e}", exc_info=True)
+                    error_result = f"Ошибка при выполнении инструмента: {str(e)}"
+                    self._add_tool_call_to_history(
+                        conversation_history, tool_calls_info,
+                        func_name, call_id, args_json, args, error_result
+                    )
         
-        # Второй запрос к модели с результатами инструментов
-        response2 = self.client.create_response(
-            instructions=self.instructions,
-            input_messages=conversation_history,
-            tools=tools_schemas if tools_schemas else None,
-        )
+        if iteration >= max_iterations:
+            logger.warning(f"Достигнут лимит итераций ({max_iterations}). Прекращаем цикл.")
         
-        # Получаем финальный ответ
-        reply_text = getattr(response2, "output_text", "")
+        if not reply_text:
+            logger.warning(f"Не получен текстовый ответ после {iteration} итераций")
+        
+        logger.debug(f"Финальный результат: итераций={iteration}, длина ответа={len(reply_text) if reply_text else 0}, инструментов={len(tool_calls_info)}")
         
         # Сохраняем conversation_history для последующего использования
         self._last_conversation_history = conversation_history
@@ -241,4 +214,49 @@ class ResponsesOrchestrator:
                     tool_calls.append(tool_call)
         
         return tool_calls
+    
+    def _add_tool_call_to_history(
+        self,
+        conversation_history: List[Dict[str, Any]],
+        tool_calls_info: List[Dict[str, Any]],
+        func_name: str,
+        call_id: str,
+        args_json: str,
+        args: Dict[str, Any],
+        result: Any
+    ) -> None:
+        """
+        Добавление вызова инструмента в историю разговора
+        
+        Args:
+            conversation_history: История разговора
+            tool_calls_info: Список информации о вызовах инструментов
+            func_name: Имя функции
+            call_id: ID вызова
+            args_json: Аргументы в формате JSON (строка)
+            args: Аргументы (словарь)
+            result: Результат выполнения инструмента
+        """
+        # Сохраняем информацию о вызове
+        tool_calls_info.append({
+            "name": func_name,
+            "args": args,
+            "result": result,
+        })
+        
+        # Добавляем function_call в историю
+        conversation_history.append({
+            "type": "function_call",
+            "call_id": call_id,
+            "name": func_name,
+            "arguments": args_json if isinstance(args_json, str) else json.dumps(args_json),
+        })
+        
+        # Добавляем результат в историю
+        tool_output = {
+            "type": "function_call_output",
+            "call_id": call_id,
+            "output": json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result,
+        }
+        conversation_history.append(tool_output)
 

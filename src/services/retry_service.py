@@ -102,7 +102,7 @@ class RetryService:
                         error_message=error_to_check or error_message,
                         agent_name=agent_name,
                         message=message or "Не указано",
-                        thread_id=chat_id
+                        chat_id=chat_id
                     )
                     # Выбрасываем специальное исключение с результатом эскалации
                     # Это исключение будет обработано на нижнем уровне (playground/bot)
@@ -137,7 +137,7 @@ class RetryService:
                             error_message=last_error_message or error_message,
                             agent_name=agent_name,
                             message=message or "Не указано",
-                            thread_id=chat_id
+                            chat_id=chat_id
                         )
                         # Выбрасываем специальное исключение с результатом эскалации
                         # Это исключение будет обработано на нижнем уровне (playground/bot)
@@ -193,7 +193,7 @@ class RetryService:
                         error_message=error_to_check or error_message,
                         agent_name=agent_name,
                         message=message or "Не указано",
-                        thread_id=chat_id
+                        chat_id=chat_id
                     )
                     # Выбрасываем специальное исключение с результатом эскалации
                     # Это исключение будет обработано на нижнем уровне (playground/bot)
@@ -228,7 +228,7 @@ class RetryService:
                             error_message=last_error_message or error_message,
                             agent_name=agent_name,
                             message=message or "Не указано",
-                            thread_id=chat_id
+                            chat_id=chat_id
                         )
                         # Выбрасываем специальное исключение с результатом эскалации
                         # Это исключение будет обработано на нижнем уровне (playground/bot)

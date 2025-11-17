@@ -40,14 +40,14 @@ class BaseAgent:
         self.orchestrator = ResponsesOrchestrator(
             instructions=instruction,
             tools_registry=tools_registry,
-        )
+            )
         
         # Инициализируем список для отслеживания tool_calls
         self._last_tool_calls = []
         
         # Результат CallManager (если был вызван)
         self._call_manager_result = None
-    
+        
     def __call__(self, message: str, conversation_history: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         Выполнение запроса к агенту
@@ -97,7 +97,7 @@ class BaseAgent:
                 return "[CALL_MANAGER_RESULT]"
             
             reply = result.get("reply", "")
-            
+                    
             # Логируем ответ от LLM
             llm_request_logger.log_response_from_llm(
                 agent_name=self.agent_name,
@@ -121,9 +121,9 @@ class BaseAgent:
                     )
             except Exception as e:
                 logger.debug(f"Ошибка при сохранении результатов инструментов в историю: {e}")
-            
+                
             return reply
-            
+        
         except Exception as e:
             import traceback
             error_traceback = traceback.format_exc()
