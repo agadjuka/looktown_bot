@@ -17,16 +17,23 @@ class YDBClient:
         
         # Получаем IAM токен или используем service account
         iam_token = os.getenv("YC_IAM_TOKEN")
-        service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE")
+        service_account_key_file = os.getenv("YC_SERVICE_ACCOUNT_KEY_FILE", "key.json")
         
         if iam_token:
             # Используем IAM токен
             credentials = ydb.AccessTokenCredentials(iam_token)
-        elif service_account_key_file:
-            # Используем service account key файл
-            credentials = ydb.iam.ServiceAccountCredentials.from_file(service_account_key_file)
+        elif os.path.exists(service_account_key_file):
+            # Используем service account key файл (для локальной разработки)
+            try:
+                credentials = ydb.iam.ServiceAccountCredentials.from_file(service_account_key_file)
+            except Exception as e:
+                # Если не удалось загрузить из файла, пробуем метаданные
+                print(f"⚠️ Не удалось загрузить ключ из {service_account_key_file}: {e}")
+                print("Пробую использовать метаданные Yandex Cloud...")
+                credentials = ydb.iam.MetadataUrlCredentials()
         else:
             # Пытаемся получить креды из метаданных окружения (Serverless Containers)
+            # Это работает только в контейнерах Yandex Cloud
             credentials = ydb.iam.MetadataUrlCredentials()
         
         # Инициализация драйвера YDB
