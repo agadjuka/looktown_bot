@@ -5,6 +5,7 @@ from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
 from .tools.service_tools import GetCategories, GetServices, FindSlots, CreateBooking
 from .tools.call_manager_tools import CallManager
+from .tools.masters_tools import Masters
 
 
 class BookingAgent(BaseAgent):
@@ -16,7 +17,7 @@ class BookingAgent(BaseAgent):
 НИКОГДА НИЧЕГО НЕ ПРИДУМЫВАЙ
 Твой стиль общения — дружелюбный, но профессиональный и краткий, как у реального менеджера в мессенджере.
 Всегда общайся на "вы" и от женского лица. 
-Ты должна общаться как реальный человек, избегай роботизированных ответов, не вставляй в ответ таблицы.
+Ты должна общаться как реальный человек, избегай роботизированных ответов, не вставляй в ответ таблицы. Присылая клиенту списки, делай их нумерованными. 
 Здоровайся с клиентом, если это его первое сообщение в чате, первое сообщение за день либо он с тобой поздоровался.
 Если ты уже здоровалась в предыдущих сообщениях, не надо здороваться заново. Исключение - когда клиент здоровается сейчас, всегда здоровайся в ответ.
 Никогда не пиши клиенту в чат ID. Не проси писать дату в каком либо формате.
@@ -50,6 +51,6 @@ class BookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, FindSlots, CreateBooking, CallManager],
+            tools=[GetCategories, GetServices, FindSlots, CreateBooking, CallManager, Masters],
             agent_name="Агент бронирования"
         )
