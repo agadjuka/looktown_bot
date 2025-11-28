@@ -1,19 +1,21 @@
 """
 Сервис для работы с LangGraph (Responses API)
 """
-import os
 from typing import Optional
+from .responses_api.config import ResponsesAPIConfig
 
 
 class LangGraphService:
     """Сервис для работы с LangGraph (Responses API)"""
     
-    def __init__(self):
-        folder_id = os.getenv("YANDEX_FOLDER_ID")
-        api_key = os.getenv("YANDEX_API_KEY_SECRET")
+    def __init__(self, config: Optional[ResponsesAPIConfig] = None):
+        """
+        Инициализация сервиса
         
-        if not folder_id or not api_key:
-            raise ValueError("Не заданы YANDEX_FOLDER_ID или YANDEX_API_KEY_SECRET")
-        
-        self.folder_id = folder_id
-        self.api_key = api_key
+        Args:
+            config: Конфигурация Responses API (если None, создаётся новая)
+        """
+        # Используем общую конфигурацию для избежания дублирования
+        self.config = config or ResponsesAPIConfig()
+        self.folder_id = self.config.folder_id
+        self.api_key = self.config.api_key

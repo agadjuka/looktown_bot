@@ -36,10 +36,15 @@ class BaseAgent:
         if tools:
             tools_registry.register_tools_from_list(tools)
         
-        # Создаём orchestrator
+        # Используем конфигурацию из langgraph_service для избежания дублирования
+        from ..services.responses_api.config import ResponsesAPIConfig
+        config = langgraph_service.config if hasattr(langgraph_service, 'config') else ResponsesAPIConfig()
+        
+        # Создаём orchestrator с общей конфигурацией
         self.orchestrator = ResponsesOrchestrator(
             instructions=instruction,
             tools_registry=tools_registry,
+            config=config,
             )
         
         # Инициализируем список для отслеживания tool_calls

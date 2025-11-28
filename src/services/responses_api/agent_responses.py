@@ -1,5 +1,9 @@
 """
 Пример использования Responses API для агента
+
+ВНИМАНИЕ: Этот файл содержит пример использования Responses API.
+В реальном проекте агенты создаются через BaseAgent, который сам создает ResponsesOrchestrator.
+Этот файл оставлен для документации и примеров использования.
 """
 import os
 from typing import List, Dict, Any, Optional
