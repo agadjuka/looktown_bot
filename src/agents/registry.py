@@ -34,7 +34,6 @@ class AgentRegistry:
             'cancel_booking_agent': 'Отмена записи',
             'reschedule_agent': 'Перенесение записи',
             'view_my_booking_agent': 'Просмотр моей записи',
-            'tool_tester_agent': 'Тестирование инструментов',
         }
         
         # Находим все файлы агентов

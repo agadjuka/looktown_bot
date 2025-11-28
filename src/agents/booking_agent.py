@@ -3,7 +3,7 @@
 """
 from .base_agent import BaseAgent
 from ..services.langgraph_service import LangGraphService
-from .tools.service_tools import GetCategories, GetServices, FindSlots, CreateBooking
+from .tools.service_tools import GetCategories, GetServices, FindSlots, CreateBooking, ViewService
 from .tools.call_manager_tools import CallManager
 from .tools.masters_tools import Masters
 
@@ -53,6 +53,6 @@ class BookingAgent(BaseAgent):
         super().__init__(
             langgraph_service=langgraph_service,
             instruction=instruction,
-            tools=[GetCategories, GetServices, FindSlots, CreateBooking, CallManager, Masters],
+            tools=[GetCategories, GetServices, FindSlots, CreateBooking, ViewService, CallManager, Masters],
             agent_name="Агент бронирования"
         )

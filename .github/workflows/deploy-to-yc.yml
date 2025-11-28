@@ -47,19 +47,17 @@ jobs:
           revision-memory: '512MB'
           revision-execution-timeout: 30
           revision-env: |
+            AUTH_HEADER=${{ secrets.AUTH_HEADER }}
+            COMPANY_ID=${{ secrets.COMPANY_ID }}
+            DEBUG=${{ secrets.DEBUG }}
+            TELEGRAM_ADMIN_GROUP_ID=${{ secrets.TELEGRAM_ADMIN_GROUP_ID }}
             TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
             YANDEX_API_KEY_ID=${{ secrets.YANDEX_API_KEY_ID }}
             YANDEX_API_KEY_SECRET=${{ secrets.YANDEX_API_KEY_SECRET }}
             YANDEX_FOLDER_ID=${{ secrets.YANDEX_FOLDER_ID }}
-            YANDEX_SERVICE_ACCOUNT_ID=${{ secrets.YANDEX_SERVICE_ACCOUNT_ID }}
-            YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
+            YC_BUCKET_NAME=${{ secrets.YC_BUCKET_NAME }}
             YDB_DATABASE=${{ secrets.YDB_DATABASE }}
-            RESPONSES_BASE_URL=${{ secrets.RESPONSES_BASE_URL }}
-            YC_AGENT_ID=${{ secrets.YC_AGENT_ID }}
-            DEBUG=${{ secrets.DEBUG }}
-            CONTAINER_NAME=looktownbot
-            AUTH_HEADER=${{ secrets.AUTH_HEADER }}
-            COMPANY_ID=${{ secrets.COMPANY_ID }}
+            YDB_ENDPOINT=${{ secrets.YDB_ENDPOINT }}
 
       - name: Setup Yandex Cloud CLI and jq
         if: always()
