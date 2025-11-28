@@ -43,8 +43,7 @@ key.json
 *.key
 *.pem
 
-# Editor and dialogue patterns
-editor/
+# Dialogue patterns
 dialogue_patterns.json
 
 # Additional ignores
