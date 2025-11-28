@@ -66,6 +66,22 @@ class AdminPanelService:
         )
 
         try:
+            # Проверяем, является ли группа форумом
+            try:
+                chat = await self.bot.get_chat(self.admin_group_id)
+                if not hasattr(chat, 'is_forum') or not chat.is_forum:
+                    error_msg = (
+                        f"Группа с ID {self.admin_group_id} не является форумом. "
+                        "Для работы админ-панели необходимо:\n"
+                        "1. Преобразовать группу в супергруппу\n"
+                        "2. Включить режим форума в настройках группы\n"
+                        "3. Убедиться, что бот является администратором группы"
+                    )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+            except Exception as e:
+                logger.warning("Не удалось проверить тип группы: %s", str(e))
+            
             # Создаем топик в админской группе
             forum_topic = await self.bot.create_forum_topic(
                 chat_id=self.admin_group_id,
@@ -90,11 +106,24 @@ class AdminPanelService:
 
             return topic_id
 
+        except RuntimeError:
+            # Пробрасываем RuntimeError дальше (это наша проверка форума)
+            raise
         except TelegramError as e:
-            error_msg = (
-                f"Ошибка при создании топика для user_id={user_id}: {str(e)}. "
-                "Убедитесь, что бот является администратором группы и имеет права на создание топиков."
-            )
+            error_code = getattr(e, 'message', str(e))
+            if "not a forum" in str(e).lower() or "не форум" in str(e).lower():
+                error_msg = (
+                    f"Группа с ID {self.admin_group_id} не является форумом. "
+                    "Для работы админ-панели необходимо:\n"
+                    "1. Преобразовать группу в супергруппу\n"
+                    "2. Включить режим форума в настройках группы (Settings → Topics)\n"
+                    "3. Убедиться, что бот является администратором группы"
+                )
+            else:
+                error_msg = (
+                    f"Ошибка при создании топика для user_id={user_id}: {str(e)}. "
+                    "Убедитесь, что бот является администратором группы и имеет права на создание топиков."
+                )
             logger.error(error_msg, exc_info=True)
             # Не роняем бота, но логируем ошибку
             raise RuntimeError(error_msg) from e
@@ -119,7 +148,12 @@ class AdminPanelService:
         """
         try:
             # Получаем или создаем топик
-            topic_id = await self.get_or_create_topic(user)
+            try:
+                topic_id = await self.get_or_create_topic(user)
+            except RuntimeError as e:
+                # Если группа не является форумом, просто логируем и выходим
+                logger.warning("Админ-панель недоступна: %s", str(e))
+                return
 
             # Определяем, как отправлять сообщение
             if source == "User":
@@ -450,7 +484,12 @@ class AdminPanelService:
         """
         try:
             # Получаем или создаем топик для пользователя
-            topic_id = await self.get_or_create_topic(user)
+            try:
+                topic_id = await self.get_or_create_topic(user)
+            except RuntimeError as e:
+                # Если группа не является форумом, просто логируем и выходим
+                logger.warning("Админ-панель недоступна для уведомления CallManager: %s", str(e))
+                return
 
             # Формируем сообщение
             message_lines = [

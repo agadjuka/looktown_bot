@@ -164,15 +164,25 @@ class YDBTopicStorage(BaseTopicStorage):
             raise ValueError(f"Недопустимый режим: {mode}. Допустимые значения: 'auto', 'manual'")
         
         try:
+            topic_id = self.get_topic_id(user_id)
+            if topic_id is None:
+                logger.warning(
+                    "Невозможно установить режим: не найден topic_id для user_id=%s",
+                    user_id,
+                )
+                return
+            
             query = f"""
             DECLARE $user_id AS String;
+            DECLARE $topic_id AS String;
             DECLARE $mode AS String;
-            UPSERT INTO {self.table_name} (user_id, mode)
-            VALUES ($user_id, $mode);
+            UPSERT INTO {self.table_name} (user_id, topic_id, mode)
+            VALUES ($user_id, $topic_id, $mode);
             """
             
             self.ydb_client._execute_query(query, {
                 "$user_id": str(user_id),
+                "$topic_id": str(topic_id),
                 "$mode": mode,
             })
             
