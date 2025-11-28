@@ -8,6 +8,7 @@ from service_factory import get_yandex_agent_service
 from src.services.logger_service import logger
 from src.services.date_normalizer import normalize_dates_in_text
 from src.services.time_normalizer import normalize_times_in_text
+from src.services.link_converter import convert_yclients_links_in_text
 from src.services.retry_service import RetryService
 from src.services.call_manager_service import CallManagerException
 from src.services.escalation_service import EscalationService
@@ -98,17 +99,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Нормализуем даты и время в ответе
     user_message_text = normalize_dates_in_text(user_message_text)
     user_message_text = normalize_times_in_text(user_message_text)
-    await update.message.reply_text(user_message_text, parse_mode=ParseMode.MARKDOWN)
+    # Преобразуем ссылки yclients.com в HTML-гиперссылки
+    user_message_text = convert_yclients_links_in_text(user_message_text)
+    await update.message.reply_text(user_message_text, parse_mode=ParseMode.HTML)
 
     # Временная заглушка: отправляем alert менеджера тем же пользователю вторым сообщением
     if isinstance(agent_response, dict) and agent_response.get("manager_alert"):
         manager_alert = normalize_dates_in_text(agent_response["manager_alert"])
         manager_alert = normalize_times_in_text(manager_alert)
+        manager_alert = convert_yclients_links_in_text(manager_alert)
         try:
-            await update.message.reply_text(manager_alert, parse_mode=ParseMode.MARKDOWN)
+            await update.message.reply_text(manager_alert, parse_mode=ParseMode.HTML)
         except Exception as e:
-            logger.warning(f"Ошибка при отправке manager_alert с Markdown: {e}, отправляю без форматирования")
-            # Отправляем без Markdown в случае ошибки парсинга
+            logger.warning(f"Ошибка при отправке manager_alert с HTML: {e}, отправляю без форматирования")
+            # Отправляем без HTML в случае ошибки парсинга
             await update.message.reply_text(manager_alert, parse_mode=None)
     logger.telegram("Ответ отправлен", chat_id)
 

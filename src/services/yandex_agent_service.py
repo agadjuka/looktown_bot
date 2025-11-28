@@ -141,14 +141,17 @@ class YandexAgentService:
         # Нормализуем даты и время в ответе
         from .date_normalizer import normalize_dates_in_text
         from .time_normalizer import normalize_times_in_text
+        from .link_converter import convert_yclients_links_in_text
         
         answer = normalize_dates_in_text(answer)
         answer = normalize_times_in_text(answer)
+        answer = convert_yclients_links_in_text(answer)
         
         result = {"user_message": answer}
         if manager_alert:
             manager_alert = normalize_dates_in_text(manager_alert)
             manager_alert = normalize_times_in_text(manager_alert)
+            manager_alert = convert_yclients_links_in_text(manager_alert)
             result["manager_alert"] = manager_alert
         
         return result
