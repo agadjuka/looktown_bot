@@ -255,7 +255,7 @@ class FindSlots(BaseModel):
                 except:
                     formatted_date = date
                 
-                slots_text = ", ".join(slots)
+                slots_text = " | ".join(slots)
                 result_lines.append(f"  {formatted_date}: {slots_text}")
             
             return "\n".join(result_lines)
