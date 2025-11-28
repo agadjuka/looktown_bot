@@ -143,6 +143,20 @@ class YDBClient:
         """
         self._execute_query(query, {"$cid": chat_id})
     
+    def create_adminpanel_table(self):
+        """Создание таблицы adminpanel для хранения данных административной панели"""
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS adminpanel (
+            user_id String,
+            topic_id String,
+            topic_name String,
+            mode String,
+            PRIMARY KEY (user_id)
+        );
+        """
+        def _tx(session):
+            return session.execute_scheme(create_table_query)
+        self.pool.retry_operation_sync(_tx)
     
     def close(self):
         """Закрытие соединения с YDB"""
