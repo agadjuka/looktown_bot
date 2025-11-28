@@ -62,7 +62,7 @@ jobs:
       - name: Setup Yandex Cloud CLI and jq
         if: always()
         run: |
-          # Устанавливаем YC CLI
+          # Устанавливаем YC CLIп
           curl -sSL https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           export PATH=$PATH:$HOME/yandex-cloud/bin
           yc version
